@@ -46,6 +46,10 @@ button.fr{background:#001a12;border-color:#2a7}
 #fl,#th,#mp,#chk,#wb{z-index:5}
 #chk{top:154px}
 #wb{top:202px;border-color:#7ab;color:#cef}
+#pz{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:none;padding:6px 14px;font-size:14px;min-width:0;z-index:5;opacity:.75}
+#pause{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.78);z-index:20;text-align:center;padding:16px}
+#pause h2{letter-spacing:.3em;color:#ccc;font-weight:normal;margin:0 0 6px}
+#pause input[type=range]{width:220px;max-width:70vw}
 #map{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-1deg);display:none;pointer-events:none;box-shadow:0 0 40px #000;opacity:.96;max-width:92vw;max-height:80vh}
 #act{bottom:22%;font-size:18px;background:#2a1a00;border-color:#a70;color:#fd8}
 #note{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);padding:16px}
@@ -78,6 +82,8 @@ button.fr{background:#001a12;border-color:#2a7}
 <button id="mp">MAP</button>
 <button id="chk">CHALK</button>
 <button id="wb">WISP</button>
+<button id="pz" aria-label="Pause">II</button>
+<div id="pause"></div>
 <canvas id="map"></canvas>
 <button id="act"></button>
 <div id="note"></div>
@@ -280,10 +286,11 @@ function playSfx(k,gain=1,pan=0,rate=1){
 const ambTo=(v,t=1.5)=>{if(ambGain)ambGain.gain.setTargetAtTime(v,A.currentTime,t/3)};
 // her voice reads each diary page; the tunnels go quiet underneath
 let narr=null;
-function narrate(i,after){stopNarr();if(!NARR[i])return;narr=new Audio('data:audio/mpeg;base64,'+NARR[i]);narr.volume=.95;narr.play().catch(()=>{});ambTo(.07,.6);narr.onended=()=>{narr=null;if(state==='play'||state==='read')ambTo(.32);after&&after()}}
+function narrate(i,after){stopNarr();if(!NARR[i])return;narr=new Audio('data:audio/mpeg;base64,'+NARR[i]);narr.volume=vol();narr.volume=.95;narr.play().catch(()=>{});ambTo(.07,.6);narr.onended=()=>{narr=null;if(state==='play'||state==='read')ambTo(.32);after&&after()}}
 function stopNarr(){if(!narr)return;narr.pause();narr=null;if(state==='play'||state==='read')ambTo(.32)}
 // the title music box: plays on the menus once the browser allows sound (after any tap or key)
-const music=new Audio(MUSIC_SRC);music.loop=true;music.volume=.5;
+const vol=()=>save.vol??1;
+const music=new Audio(MUSIC_SRC);music.loop=true;music.volume=.5*vol();
 const musicOn=()=>{if(state==='menu'||state==='win'||state==='dead'||state==='lobby')music.play().catch(()=>{})};
 addEventListener('pointerdown',musicOn);addEventListener('pointerdown',()=>{if(state==='grab')grabTap()});addEventListener('keydown',musicOn);
 function audioInit(){
@@ -291,7 +298,7 @@ function audioInit(){
   A=new (window.AudioContext||window.webkitAudioContext)();
   // limiter last in the chain: the stinger's five saws summed past 1.0 and clipped; this keeps peaks loud but clean
   const lim=A.createDynamicsCompressor();lim.threshold.value=-8;lim.knee.value=4;lim.ratio.value=16;lim.attack.value=.002;lim.release.value=.2;lim.connect(A.destination);
-  master=A.createGain();master.gain.value=.9;master.connect(lim);
+  master=A.createGain();master.gain.value=.9*vol();master.connect(lim);
   const len=A.sampleRate*2;noiseBuf=A.createBuffer(1,len,A.sampleRate);
   const brown=A.createBuffer(1,len,A.sampleRate),n=noiseBuf.getChannelData(0),b=brown.getChannelData(0);let last=0;
   for(let i=0;i<len;i++){const w=Math.random()*2-1;n[i]=w;last=(last+.02*w)/1.02;b[i]=last*3.5}
@@ -465,8 +472,12 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyM')mapOpen=!mapOpen;
   if(e.code==='KeyC')chalkMark();
   if(e.code==='KeyR')wispBurst();
+  if(e.code==='KeyP'||e.code==='Escape')pauseGame();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('keydown',e=>{if(state==='pause'){if(e.code==='KeyP'||e.code==='Escape'||e.code==='Space'){e.preventDefault();resumeGame()}e.stopImmediatePropagation()}},true);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseGame()});
+document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement&&state==='play'&&!isTouch&&!coop)pauseGame()});
 cv.addEventListener('click',()=>{if(state==='play'&&!('ontouchstart'in window))cv.requestPointerLock?.()});
 addEventListener('mousemove',e=>{if(document.pointerLockElement===cv&&state==='play')P.a+=e.movementX*.0025});
 let joy=null,look=null;
@@ -488,6 +499,7 @@ $('th').addEventListener('click',e=>{e.stopPropagation();throwStone()});
 $('mp').addEventListener('click',e=>{e.stopPropagation();mapOpen=!mapOpen});
 $('chk').addEventListener('click',e=>{e.stopPropagation();chalkMark()});
 $('wb').addEventListener('click',e=>{e.stopPropagation();wispBurst()});
+$('pz').addEventListener('click',e=>{e.stopPropagation();pauseGame()});
 $('act').addEventListener('click',e=>{e.stopPropagation();doAction()});
 $('note').addEventListener('click',closePage);
 
@@ -588,6 +600,24 @@ function wispBurst(){
   if(coop){coop.sent=0;netSend()}
 }
 function hatLine(){const n=Object.keys(save.tro||{}).length,nx=HATS.find(h=>h.need>n);return (save.hat>=0?`Wisp's hat: ${HATS[save.hat].n}`:"Wisp's hat: none")+(nx?` · next at ${nx.need} trophies`:'')}
+// pause: the house stops while she's away (solo only; in co-op the house never stops)
+function pauseGame(){
+  if(state!=='play'||coop)return;
+  state='pause';for(const k in keys)keys[k]=false;joy=look=null;document.exitPointerLock?.();
+  if(A&&A.state==='running')A.suspend();narr?.pause();
+  const pz=$('pause');pz.style.display='flex';
+  pz.innerHTML=`<h2>PAUSED</h2><button id="rs">RESUME</button>
+    <label class="small">Sound<br><input id="vl" type="range" min="0" max="1" step=".05" value="${vol()}"></label>
+    <p class="small">Floor ${floor} of ${FLOORS} · ${nightmare?'Nightmare':easy?'Easy':'Normal'}</p>
+    <button class="sm" id="qt">QUIT TO TITLE</button>`;
+  $('rs').onclick=resumeGame;
+  $('vl').oninput=e=>{save.vol=+e.target.value;store();if(master)master.gain.value=.9*vol();music.volume=.5*vol();if(narr)narr.volume=vol()};
+  $('qt').onclick=()=>{if(confirm('Leave this run? Your checkpoint is kept.'))location.reload()};
+}
+function resumeGame(){
+  if(state!=='pause')return;
+  $('pause').style.display='none';state='play';if(A&&A.state==='suspended')A.resume();narr?.play().catch(()=>{});
+}
 function freePapa(){
   papa.st='follow';trail=[];papa.freed=(papa.freed||0)+1;
   playSfx('pp4',1);setTimeout(()=>playSfx('pp2',1,panOf(papa)),1500);
@@ -665,7 +695,7 @@ let grabS=null,grabsFloor=0;
 function grab(who){
   if(state!=='play')return;
   state='grab';grabS={t:0,taps:0,need:(easy?6:nightmare?12:9)+grabsFloor*2,who};
-  ['fl','th','mp','chk','wb','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;mapOpen=false;
+  ['fl','th','mp','chk','wb','pz','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;mapOpen=false;
   for(const k in keys)keys[k]=false;joy=look=null;
   $('msg').style.opacity=0;msgT=0;
   playSfx('scream',.45,0,1.5);thump(.5);
@@ -675,7 +705,7 @@ function grabFree(){
   const who=grabS.who;grabS=null;grabsFloor++;state='play';
   if(who==='E')sendCreatureAway();else if(who==='C')crawlAway();
   stamina=100;winded=false;light.flick=true;
-  ['fl','th','mp','chk','wb'].forEach(i=>$(i).style.display='block');
+  ['fl','th','mp','chk','wb','pz'].forEach(i=>$(i).style.display='block');
   noise(.35,180,1,.3,'lowpass');say('You tore free! Run!',3);
   if(coop){coop.sent=0;netSend()}
 }
@@ -700,12 +730,12 @@ function drawGrab(dt){
 }
 function caught(){
   caughtRun=true;state='scare';scareT=0;scream();hidden=null;
-  ['hud','fl','th','mp','chk','wb','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;document.exitPointerLock?.();
+  ['hud','fl','th','mp','chk','wb','pz','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;document.exitPointerLock?.();
   $('msg').style.opacity=0;msgT=0;  // nothing covers the face
 }
 function respawn(){
   state='play';P.x=1.5;P.y=1.5;P.a=grid[1][2]?Math.PI/2:0;light.on=true;light.bat=Math.max(light.bat,40);hidden=null;DpTile=-1;
-  ['hud','fl','th','mp','chk','wb'].forEach(i=>$(i).style.display='block');
+  ['hud','fl','th','mp','chk','wb','pz'].forEach(i=>$(i).style.display='block');
   say(`Wisp pulled you back to the start. Find ${fname()}!`,4);
 }
 // the host moves the creature somewhere far from both players after it catches someone
@@ -985,6 +1015,12 @@ function update(dt){
   if(!easy&&!hidden&&timeIn>15){writeT-=dt;if(writeT<=0)writeT=scrawlBehind()?(nightmare?30:50)+Math.random()*30:5}
   for(const w of writes.values())if(!w.seen&&onScreen(w,.35)&&Math.hypot(w.x-P.x,w.y-P.y)<4&&los(P.x,P.y,w.x,w.y)){w.seen=true;stinger();playSfx('whisper',.7,panOf(w))}
   // a face out of nowhere for a blink. It can't hurt her, but she doesn't know that.
+  if(msgT<=0&&!hidden){const T=save.tips||(save.tips={}),tip=(id,txt)=>{if(!T[id]){T[id]=1;store();say(txt,5);return true}return false};
+    (lit(E)&&Math.hypot(E.x-P.x,E.y-P.y)<4.5&&tip('freeze','It froze in your light! Keep your light on it and it cannot move.'))||
+    (dreadV>.55&&bursts>0&&!lit(E)&&tip('burst',isTouch?'Tap WISP to blast it away!':'Press R (or tap WISP) to blast it away!'))||
+    (timeIn>50&&tip('map',isTouch?'Lost? Tap MAP to see where you have been.':'Lost? Press M (or tap MAP) to see where you have been.'))||
+    (timeIn>95&&T.map&&tip('chalk',isTouch?'Tap CHALK to draw a star on a wall, so you know you were here.':'Press C to chalk a star on a wall, so you know you were here.'))||
+    (timeIn>30&&stones>0&&dreadV>.3&&tip('stone',isTouch?'Tap THROW to toss a stone. It goes to look at the noise.':'Press G to throw a stone. It goes to look at the noise.'))}
   if(burstT>0)burstT-=dt;if(E.stun>0)E.stun-=dt;
   if(flash){flash.t-=dt;if(flash.t<=0)flash=null}
   else if(!easy&&!hidden&&timeIn>20&&moving&&!onScreen(E,.8)){flashT-=dt;if(flashT<=0){flashT=(nightmare?40:70)+Math.random()*50;flash={t:.2,img:ART.sf[Math.random()*3|0]};stinger();playSfx('scream',.35,0,1.25)}}
@@ -1379,7 +1415,7 @@ function drawScare(){
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const who=()=>save.name?esc(save.name):'You';
 function end(html,color,extra=''){
-  ['hud','fl','th','mp','chk','wb','act','note','joy'].forEach(i=>$(i).style.display='none');$('msg').style.opacity=0;actNow=null;
+  ['hud','fl','th','mp','chk','wb','pz','act','note','joy'].forEach(i=>$(i).style.display='none');$('msg').style.opacity=0;actNow=null;
   stopNarr();ambTo(0);music.currentTime=0;setTimeout(musicOn,1200);  // the tunnels go quiet, the music box comes back
   menu(`<h1 style="color:${color};font-size:34px;letter-spacing:.2em;margin:0">${html}</h1>`+extra+(runGems?`<p>+${runGems} gem${runGems>1?'s':''} this run</p>`:''),'AGAIN');
 }
@@ -1467,7 +1503,7 @@ async function openLobby(code,role){
 function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy'){
   nightmare=nm;continued=cont;easy=!nm&&ez;caughtRun=false;
   audioInit();A.resume();music.pause();ambTo(.32,3);totalT=0;runGems=0;tint=LIGHTS[save.light].t;newGame(fl);state='play';
-  $('ui').style.display='none';['hud','fl','th','mp','chk','wb'].forEach(i=>$(i).style.display='block');
+  $('ui').style.display='none';['hud','fl','th','mp','chk','wb','pz'].forEach(i=>$(i).style.display='block');
   stamina=100;winded=false;running=false;
   say(nightmare?'Nightmare. It is faster, and your light burns quicker.':coop?`Find the sigils together. Wisp knows the way.`:`${save.name?save.name+', find':'Find'} the three sigils. Wisp knows the way.`,4);
   if(cont)say(`Floor ${fl}. Back where it caught you. It remembers you too.`,4);
