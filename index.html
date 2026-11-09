@@ -39,9 +39,13 @@ button.fr{background:#001a12;border-color:#2a7}
 #knob.run{background:rgba(255,200,120,.45)}
 .endart{width:min(620px,92vw);max-height:36vh;object-fit:cover;border-radius:4px;box-shadow:0 0 40px #000}
 #msg{position:fixed;bottom:12%;left:0;right:0;text-align:center;color:#bbb;font-size:18px;pointer-events:none;transition:opacity .6s;opacity:0;padding:0 16px}
-#fl,#th,#act{position:fixed;right:12px;font-size:14px;padding:10px 16px;display:none;min-width:96px}
+#fl,#th,#mp,#ck,#act{position:fixed;right:12px;font-size:14px;padding:10px 16px;display:none;min-width:96px}
 #fl{top:10px}
 #th{top:58px}
+#mp{top:106px}
+#fl,#th,#mp,#ck{z-index:5}
+#ck{top:154px}
+#map{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-1deg);display:none;pointer-events:none;box-shadow:0 0 40px #000;opacity:.96;max-width:92vw;max-height:80vh}
 #act{bottom:22%;font-size:18px;background:#2a1a00;border-color:#a70;color:#fd8}
 #note{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);padding:16px}
 .pg{background:#d9cfae;color:#2a1f14;max-width:420px;padding:24px 26px;font-size:18px;line-height:1.55;box-shadow:0 0 40px #000;transform:rotate(-1deg)}
@@ -68,6 +72,9 @@ button.fr{background:#001a12;border-color:#2a7}
 <div id="joy"><div id="knob"></div></div>
 <button id="fl">LIGHT</button>
 <button id="th">THROW</button>
+<button id="mp">MAP</button>
+<button id="ck">CHALK</button>
+<canvas id="map"></canvas>
 <button id="act"></button>
 <div id="note"></div>
 <div id="ui"></div>
@@ -145,6 +152,7 @@ function los(ax,ay,bx,by){const d=Math.hypot(bx-ax,by-ay),n=Math.ceil(d/0.1);for
 // ---------- state ----------
 let state='menu',P,E,sprites,sigils,exitS,light,timeIn,msgT=0,scareT=0,stingCd=0,wasSeen=false,flickT=0,nextFlick=0,beatT=0,stepT=0,bob=0,walkPh=0,Dp=null,DpTile=-1;
 let floor=1,totalT=0,ghost=null,nextGhost=0,eStepT=0,pet=null,petKey='',Dt=null,gems=[],runGems=0;
+let seen=null,chalk=[],chalkAt=new Map(),mapOpen=false,ckSig='';
 let caughtRun=false,easy=false,C=null,moving=false,continued=false,stamina=100,winded=false,running=false,behindT=0,blackT=0,pages=[],lockers=[],gate=null,keyS=null,hasKey=false,regionA=null,stones=3,stoneS=null,lure=null,hidden=null,hideT=0,lightWas=true,actNow=null;
 // flashlight colours: tint on the light cone, unlocked by total gems found
 const LIGHTS=[
@@ -216,6 +224,7 @@ function newGame(fl,bat=100,tries=0){
   gems=place(2,'gem');
   pages=place(2,'page').map((p,i)=>({...p,idx:(fl-1)*2+i}));
   rnd=Math.random;
+  seen=new Uint8Array(S*S);chalk=[];ckSig='';rebuildChalk();
   pet={x:P.x+Math.cos(P.a)*.8,y:P.y+Math.sin(P.a)*.8,t:'pet'};petKey='';
   light={on:true,bat,flick:true};
   stones=easy?5:3;stoneS=null;lure=null;hidden=null;hideT=0;
@@ -377,7 +386,7 @@ function netSend(){
   const r2=v=>Math.round(v*100)/100;
   const p={role:coop.role,n:save.name.slice(0,12),c:save.light,p:[r2(P.x),r2(P.y),r2(P.a)],l:light.on&&light.flick?1:0,
     h:hidden&&!hidden.spotted?1:0,f:floor,sg:mask(sigils),k:(keyS?.got||hasKey)?1:0,g:gate?.open?1:0,st:state,lr:coop.lr||null};
-  p.mv=moving?1:0;p.rn=running?1:0;  // the host's crawler listens for the friend's feet too
+  p.mv=moving?1:0;p.rn=running?1:0;p.ck=chalk;  // the host's crawler listens for the friend's feet too
   if(coop.role==='host'){p.e=[r2(E.x),r2(E.y)];p.cg=coop.cg||0;p.nm=nightmare?1:0;p.cr=C?[r2(C.x),r2(C.y),C.hunt?1:0]:null}
   coop.room.presence(p).catch(()=>{});
 }
@@ -396,6 +405,7 @@ function netRecv(dt){
   if(typeof q.f==='number'&&q.f>floor&&q.f<=FLOORS){newGame(q.f,Math.min(100,light.bat+25));say(`${fname()} found the way down. You followed.`,4);return}
   if(q.st==='win'&&q.f===FLOORS&&state==='play'){winGame(true);return}
   if(q.f!==floor){coop.fs=null;return}
+  const cs=Array.isArray(q.ck)?q.ck.join():'';if(cs!==ckSig){ckSig=cs;rebuildChalk()}  // their chalk stars
   // their body
   const fs=coop.fs||(coop.fs={t:'friend',x:q.p[0],y:q.p[1]});
   const k=Math.min(1,dt*10);fs.x+=(q.p[0]-fs.x)*k;fs.y+=(q.p[1]-fs.y)*k;fs.a=q.p[2];fs.c=LIGHTS[q.c|0]?.c||LIGHTS[0].c;fs.l=!!q.l;fs.h=!!q.h;
@@ -426,6 +436,8 @@ addEventListener('keydown',e=>{
   if(state!=='play')return;
   if(e.code==='KeyF')toggleLight();
   if(e.code==='KeyG')throwStone();
+  if(e.code==='KeyM')mapOpen=!mapOpen;
+  if(e.code==='KeyC')chalkMark();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
 cv.addEventListener('click',()=>{if(state==='play'&&!('ontouchstart'in window))cv.requestPointerLock?.()});
@@ -446,6 +458,8 @@ cv.addEventListener('touchend',e=>{for(const t of e.changedTouches){if(joy&&t.id
 function toggleLight(){if(light.bat<=0||hidden)return;light.on=!light.on;if(A)tone(1800,.04,.08,'square')}
 $('fl').addEventListener('click',e=>{e.stopPropagation();toggleLight()});
 $('th').addEventListener('click',e=>{e.stopPropagation();throwStone()});
+$('mp').addEventListener('click',e=>{e.stopPropagation();mapOpen=!mapOpen});
+$('ck').addEventListener('click',e=>{e.stopPropagation();chalkMark()});
 $('act').addEventListener('click',e=>{e.stopPropagation();doAction()});
 $('note').addEventListener('click',closePage);
 
@@ -479,6 +493,53 @@ function unlock(){
   if(coop?.role!=='guest')hear(gate.x,gate.y,12);
 }
 function setLure(x,y,t,wander){lure={x,y,t,wander,D:bfs(x|0,y|0)};if(!wander)hear(x,y,10)}  // a stone's clatter draws the crawler too
+// chalk: a star on the wall you're facing, in your light's colour. Same wall again rubs it out.
+function rebuildChalk(){
+  chalkAt.clear();
+  const fq=coop?.fp;
+  if(fq&&fq.f===floor&&Array.isArray(fq.ck)){const c=hexRgb((LIGHTS[fq.c]||LIGHTS[0]).c);for(const k of fq.ck.slice(0,30))if(Number.isInteger(k)&&k>=0&&k<S*S*4)chalkAt.set(k,c)}
+  const mine=hexRgb(LIGHTS[save.light].c);for(const k of chalk)chalkAt.set(k,mine);
+}
+function chalkMark(){
+  if(state!=='play'||hidden)return;
+  const rx=Math.cos(P.a),ry=Math.sin(P.a);let mx=P.x|0,my=P.y|0,side=0;
+  const ddx=Math.abs(1/rx),ddy=Math.abs(1/ry),sx=rx<0?-1:1,sy=ry<0?-1:1;
+  let sdx=(rx<0?P.x-mx:mx+1-P.x)*ddx,sdy=(ry<0?P.y-my:my+1-P.y)*ddy;
+  for(let i=0;i<64;i++){if(sdx<sdy){sdx+=ddx;mx+=sx;side=0}else{sdy+=ddy;my+=sy;side=1}if(grid[my][mx])break}
+  const d=side?sdy-ddy:sdx-ddx;
+  if(d>2.2){say('Walk up to a wall to chalk it.',1.5);return}
+  if(grid[my][mx]===2){say("Chalk won't stick to iron.",1.5);return}
+  const k=(mx+my*S)*4+(side?(sy>0?2:3):(sx>0?0:1)),i=chalk.indexOf(k);
+  if(i>=0){chalk.splice(i,1);say('You rub the star out.',1.5)}
+  else{if(chalk.length>=30)chalk.shift();chalk.push(k);if(!save.chalked){save.chalked=1;store();say('A chalk star. You can see it on your map too.',3)}}
+  noise(.22,3200,2,.05,'highpass');rebuildChalk();if(coop){coop.sent=0;netSend()}
+}
+// the map: a pencil sketch of what she has seen. It never shows the creatures.
+function drawMap(){
+  const m=$('map'),cs=Math.max(5,Math.floor(Math.min(innerWidth*(innerWidth<700?.9:.62),innerHeight*.72)/S)),sz=cs*S;
+  if(m.width!==sz){m.width=m.height=sz}
+  const g=m.getContext('2d'),at=(x,y)=>[(x+.5)*cs,(y+.5)*cs];
+  g.fillStyle='#d9cfae';g.fillRect(0,0,sz,sz);
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){
+    const i=x+y*S;if(!seen[i])continue;const v=grid[y][x];
+    if(v===0){g.fillStyle='#f1e8ca';g.fillRect(x*cs,y*cs,cs,cs)}
+    else if(v===1){g.fillStyle=hash(x,y,5)<.5?'#4a3f30':'#564a38';g.fillRect(x*cs+.5,y*cs+.5,cs-1,cs-1)}
+    else{g.fillStyle='#f1e8ca';g.fillRect(x*cs,y*cs,cs,cs);g.strokeStyle='#5a3a26';g.lineWidth=Math.max(1,cs/8);for(let b=1;b<4;b++){g.beginPath();g.moveTo(x*cs+b*cs/4,y*cs);g.lineTo(x*cs+b*cs/4,y*cs+cs);g.stroke()}}
+  }
+  const vis=o=>o&&seen[(o.x|0)+(o.y|0)*S];
+  if(vis(exitS)){const [x,y]=at(exitS.x-.5,exitS.y-.5);g.fillStyle=sigils.every(s=>s.got)?'#3a7a3a':'#6a4a2a';g.fillRect(x-cs*.3,y-cs*.4,cs*.6,cs*.8)}
+  for(const sg of sigils)if(vis(sg)){const [x,y]=at(sg.x-.5,sg.y-.5);g.strokeStyle=g.fillStyle='#b01818';g.lineWidth=Math.max(1.5,cs/7);
+    if(sg.got){g.beginPath();g.moveTo(x-cs*.25,y-cs*.25);g.lineTo(x+cs*.25,y+cs*.25);g.moveTo(x+cs*.25,y-cs*.25);g.lineTo(x-cs*.25,y+cs*.25);g.stroke()}
+    else{g.beginPath();g.arc(x,y,cs*.28,0,7);g.fill()}}
+  if(keyS&&!keyS.got&&vis(keyS)){const [x,y]=at(keyS.x-.5,keyS.y-.5);g.fillStyle='#c09020';g.beginPath();g.arc(x,y,cs*.22,0,7);g.fill()}
+  for(const [k,c] of chalkAt){const w=k>>2,f=k&3,o=[[-.5,0],[.5,0],[0,-.5],[0,.5]][f];const [x,y]=at((w%S)+o[0]*.8,((w/S)|0)+o[1]*.8);
+    g.fillStyle=`rgb(${c})`;g.strokeStyle='#2a1f14';g.lineWidth=1;g.beginPath();for(let j=0;j<10;j++){const r=(j%2?.18:.42)*cs,a=-Math.PI/2+j*Math.PI/5;g.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r)}g.closePath();g.fill();g.stroke()}
+  if(friendHere()){const [x,y]=at(coop.fs.x-.5,coop.fs.y-.5);g.fillStyle=(LIGHTS[coop.fp.c]||LIGHTS[0]).c;g.beginPath();g.arc(x,y,cs*.3,0,7);g.fill();g.strokeStyle='#2a1f14';g.lineWidth=1;g.stroke()}
+  const [px,py]=at(P.x-.5,P.y-.5),r=cs*.62;
+  g.fillStyle=LIGHTS[save.light].c;g.strokeStyle='#2a1f14';g.lineWidth=Math.max(1,cs/10);g.beginPath();
+  g.moveTo(px+Math.cos(P.a)*r,py+Math.sin(P.a)*r);g.lineTo(px+Math.cos(P.a+2.5)*r*.75,py+Math.sin(P.a+2.5)*r*.75);g.lineTo(px+Math.cos(P.a-2.5)*r*.75,py+Math.sin(P.a-2.5)*r*.75);g.closePath();g.fill();g.stroke();
+  g.fillStyle='#6a5a40';g.font=`${Math.max(11,cs*.9)|0}px Georgia,serif`;g.fillText('Floor '+floor,cs*.4,cs*1.1);
+}
 function throwStone(){
   if(state!=='play'||hidden)return;
   if(stones<=0){say('No stones left.');return}
@@ -502,12 +563,12 @@ function closePage(){if(state!=='read')return;stopNarr();$('note').style.display
 // caught: alone it's the end; with a friend, Wisp pulls you back to the start
 function caught(){
   caughtRun=true;state='scare';scareT=0;scream();hidden=null;
-  ['hud','fl','th','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;document.exitPointerLock?.();
+  ['hud','fl','th','mp','ck','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;document.exitPointerLock?.();
   $('msg').style.opacity=0;msgT=0;  // nothing covers the face
 }
 function respawn(){
   state='play';P.x=1.5;P.y=1.5;P.a=grid[1][2]?Math.PI/2:0;light.on=true;light.bat=Math.max(light.bat,40);hidden=null;DpTile=-1;
-  ['hud','fl','th'].forEach(i=>$(i).style.display='block');
+  ['hud','fl','th','mp','ck'].forEach(i=>$(i).style.display='block');
   say(`Wisp pulled you back to the start. Find ${fname()}!`,4);
 }
 // the host moves the creature somewhere far from both players after it catches someone
@@ -912,6 +973,7 @@ function render(t){
     if(ry<0){sy=-1;sdy=(P.y-my)*ddy}else{sy=1;sdy=(my+1-P.y)*ddy}
     for(let i=0;i<64;i++){if(sdx<sdy){sdx+=ddx;mx+=sx;side=0}else{sdy+=ddy;my+=sy;side=1}if(grid[my][mx])break}
     const d=Math.max(.05,side?sdy-ddy:sdx-ddx);zbuf[x]=d;
+    if(cone[x]>.05||d<1.6){seen[mx+my*S]=1;for(let k=.3;k<d;k+=.5)seen[(P.x+rx*k|0)+(P.y+ry*k|0)*S]=1}  // the map remembers what you've seen
     let u=side?P.x+d*rx:P.y+d*ry;u-=Math.floor(u);
     const lh=WS/d,top=hz-lh/2,y0=Math.max(0,top|0),y1=Math.min(H,(top+lh)|0);
     const sd=side?.72:1,c0=cone[x]/(1+d*d*.28)*sd,ad=sd/(1+d);
@@ -935,6 +997,14 @@ function render(t){
     for(let y=y0;y<y1;y++){
       const tv=((y-top)/lh*TS)|0,ti=(tv<0?0:tv>63?63:tv)*TS*3+tu,gr=.95+Math.random()*.1;
       buf[y*W+x]=px32(TX[ti]*R0*270*gr|0,TX[ti+1]*G0*270*gr|0,TX[ti+2]*B0*270*gr|0);
+    }
+    const cm=chalkAt.size?chalkAt.get((mx+my*S)*4+(side?(sy>0?2:3):(sx>0?0:1))):null;
+    if(cm&&u>.28&&u<.72){  // a chalk star, only as bright as the light on the wall
+      const du=(u-.5)/.22;
+      for(let y=Math.max(y0,(top+lh*.3)|0);y<Math.min(y1,(top+lh*.7)|0);y++){
+        const dv=((y-top)/lh-.5)/.2,r=Math.hypot(du,dv),a=Math.atan2(dv,du),lim=.38+.62*Math.pow(.5+.5*Math.cos(5*(a+Math.PI/2)),2);
+        if(r<lim&&Math.random()>.15)buf[y*W+x]=px32(cm[0]*R0*1.1|0,cm[1]*G0*1.1|0,cm[2]*B0*1.1|0);
+      }
     }
   }
   // dust motes: drift near you, only visible where the beam catches them
@@ -1124,7 +1194,7 @@ function drawScare(){
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const who=()=>save.name?esc(save.name):'You';
 function end(html,color,extra=''){
-  ['hud','fl','th','act','note','joy'].forEach(i=>$(i).style.display='none');$('msg').style.opacity=0;actNow=null;
+  ['hud','fl','th','mp','ck','act','note','joy'].forEach(i=>$(i).style.display='none');$('msg').style.opacity=0;actNow=null;
   stopNarr();ambTo(0);music.currentTime=0;setTimeout(musicOn,1200);  // the tunnels go quiet, the music box comes back
   menu(`<h1 style="color:${color};font-size:34px;letter-spacing:.2em;margin:0">${html}</h1>`+extra+(runGems?`<p>+${runGems} gem${runGems>1?'s':''} this run</p>`:''),'AGAIN');
 }
@@ -1144,7 +1214,7 @@ function menu(head,btn){
   <div class="row"><button class="sm" id="dfb">MODE: ${save.diff==='easy'?'EASY':'NORMAL'}</button>${save.wins?`<button class="sm" id="nmb">NIGHTMARE: ${save.nm?'ON':'OFF'}</button>`:''}${np?`<button class="sm" id="jr">READ PAGES (${np} of ${PAGES.length})</button>`:''}<button class="sm" id="trb">TROPHIES (${Object.keys(save.tro||{}).length} of ${TROPHIES.length})</button></div>
   <p class="small">Gems found: ${save.gems}${next?` · next light at ${next.need}`:' · every light unlocked'}${save.best?` · best escape ${save.best}s`:''}</p>
   <p class="warn">Loud sounds and sudden flashing images. Headphones make it worse.</p>
-  <p class="small">WASD or arrows to move · mouse to look · F light · Space hide or unlock · G throw a stone · Shift run<br>Phone: drag the left side to walk (drag far to run), the right side to look</p>`;
+  <p class="small">WASD or arrows to move · mouse to look · F light · Space hide or unlock · G throw a stone · Shift run · M map · C chalk<br>Phone: drag the left side to walk (drag far to run), the right side to look</p>`;
   $('nm').value=save.name;
   $('nm').oninput=e=>{save.name=e.target.value.trim();store()};
   ui.querySelectorAll('.sw button').forEach(b=>b.onclick=()=>{save.light=+b.dataset.i;store();ui.querySelectorAll('.sw button').forEach(x=>x.classList.toggle('on',x===b));$('ln').textContent='Light: '+LIGHTS[save.light].n});
@@ -1209,7 +1279,7 @@ async function openLobby(code,role){
 function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy'){
   nightmare=nm;continued=cont;easy=!nm&&ez;caughtRun=false;
   audioInit();A.resume();music.pause();ambTo(.32,3);totalT=0;runGems=0;tint=LIGHTS[save.light].t;newGame(fl);state='play';
-  $('ui').style.display='none';['hud','fl','th'].forEach(i=>$(i).style.display='block');
+  $('ui').style.display='none';['hud','fl','th','mp','ck'].forEach(i=>$(i).style.display='block');
   stamina=100;winded=false;running=false;
   say(nightmare?'Nightmare. It is faster, and your light burns quicker.':coop?`Find the sigils together. Wisp knows the way.`:`${save.name?save.name+', find':'Find'} the three sigils. Wisp knows the way.`,4);
   if(cont)say(`Floor ${fl}. Back where it caught you. It remembers you too.`,4);
@@ -1228,6 +1298,7 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if(state==='play'){update(dt);if(state==='play')render(now/1000)}
   else if(coop&&(state==='read'||state==='scare'))netSend();
+  const mo=state==='play'&&mapOpen;if(mo)drawMap();$('map').style.display=mo?'block':'none';
   if(state==='scare')drawScare();
   requestAnimationFrame(loop);
 }
