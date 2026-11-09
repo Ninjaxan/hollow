@@ -338,10 +338,28 @@ function mockRoom(){
       leave:async()=>{clearInterval(tick);bc.postMessage({peer:me,leave:1});bc.close()}};
   }};
 }
+// public page (outside Claude): same calls over our own WebSocket relay
+const RELAY='wss://kosmic.dungeon.games/hollow';
+function wsRoom(){
+  return {join:name=>new Promise((ok,no)=>{
+    const ws=new WebSocket(RELAY+'?room='+encodeURIComponent(name)),others=new Map();let mine={},open=false;
+    const send=()=>{if(ws.readyState===1)ws.send(JSON.stringify({presence:mine}))};
+    let tick;
+    ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}if(d.leave)others.delete(d.peer);else if(d.peer)others.set(d.peer,{peer:d.peer,presence:d.presence,t:Date.now(),isMe:false,sameTab:false})};
+    ws.onerror=()=>{if(!open)no(new Error('relay'))};
+    ws.onclose=()=>{open=false;clearInterval(tick);others.clear()};
+    ws.onopen=()=>{open=true;tick=setInterval(send,1000);ok({name,
+      presence:async p=>{mine={...mine,...p};for(const k in p)if(p[k]===null)delete mine[k];send()},
+      peers:()=>{const now=Date.now();for(const [k,v] of others)if(now-v.t>5000)others.delete(k);return [{peer:'me',presence:mine,isMe:true,sameTab:true},...others.values()]},
+      connected:()=>open,
+      leave:async()=>{clearInterval(tick);ws.close()}})};
+  })};
+}
 (async()=>{
   try{
     if(location.search.includes('mockroom'))roomApi=mockRoom();
     else if(window.claude?.use)roomApi=await window.claude.use('room');
+    if(!roomApi&&'WebSocket'in window)roomApi=wsRoom();
   }catch{roomApi=null}
   // add the button in place instead of redrawing the menu, so an early tap never lands on a vanishing button
   if(roomApi&&$('go')&&!$('fr')){$('go').insertAdjacentHTML('afterend','<button class="fr" id="fr">PLAY WITH A FRIEND</button>');$('fr').onclick=friendMenu}
