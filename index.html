@@ -707,6 +707,11 @@ function update(dt){
       }
     }
     E.mv=0;  // frozen in the light: the cloak goes still too
+    // stare it down: keep the light on it while it's close and it gives up the hall (else a frozen one can block the only way on)
+    const held=isLit||(light.on&&litBy(E,{x:P.x,y:P.y,a:P.a,bat:light.bat}));  // a flicker doesn't break the stare
+    if(held&&pd>=0&&pd<=5){E.stare=(E.stare||0)+dt;
+      if(E.stare>=(easy?2.5:4)){E.stare=0;sendCreatureAway();playSfx('whisper',.6,panOf(E),.7);say('It shrinks from the light and slips away into the dark.',3)}
+    }else E.stare=Math.max(0,(E.stare||0)-dt);
     if(!isLit&&timeIn>4){
       // it hears you run: a little faster while your feet are loud
       const espd=(1.05+.12*(floor-1)+.28*sigils.filter(x=>x.got).length)*dt*(lure?.wander?.6:1)*(nightmare?1.3:easy?.75:1)*(running&&!lure?1.22:1);
@@ -1216,7 +1221,7 @@ function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy'){
     $('note').style.display='flex';
   }
 }
-menu(`<h1>HOLLOW</h1><p>Three floors. On each, find the three sigils, then the door.<br>It only moves when your light is off it. Listen for its steps.<br>Wisp, your little light, knows the way. Hide in lockers, throw stones to fool it, and find the lost diary pages.</p>`,'ENTER');
+menu(`<h1>HOLLOW</h1><p>Three floors. On each, find the three sigils, then the door.<br>It only moves when your light is off it. Stare it down and it backs away. Listen for its steps.<br>Wisp, your little light, knows the way. Hide in lockers, throw stones to fool it, and find the lost diary pages.</p>`,'ENTER');
 
 let last=performance.now();
 function loop(now){
