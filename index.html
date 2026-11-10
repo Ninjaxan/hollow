@@ -272,7 +272,7 @@ function newGame(fl,bat=100,tries=0){
   seen=new Uint8Array(S*S);chalk=[];ckSig='';rebuildChalk();
   pet={x:P.x+Math.cos(P.a)*.8,y:P.y+Math.sin(P.a)*.8,t:'pet'};petKey='';
   light={on:true,bat,flick:true};
-  trailT=0;lastFind=0;trailShow=0;grabsFloor=0;bursts=easy?2:1;burstT=0;if(E)E.stun=0;writes=new Map();flash=null;flashT=(nightmare?35:60)+Math.random()*40;writeT=(nightmare?25:40)+Math.random()*30;stones=easy?5:3;stoneS=null;lure=null;hidden=null;hideT=0;
+  finale=null;shakeV=0;dust=[];trailT=0;lastFind=0;trailShow=0;grabsFloor=0;bursts=easy?2:1;burstT=0;if(E)E.stun=0;writes=new Map();flash=null;flashT=(nightmare?35:60)+Math.random()*40;writeT=(nightmare?25:40)+Math.random()*30;stones=easy?5:3;stoneS=null;lure=null;hidden=null;hideT=0;
   ghost=null;nextGhost=20+Math.random()*25;eStepT=0;
   behindT=45+Math.random()*30;blackT=40+Math.random()*30;
   timeIn=0;stingCd=6;wasSeen=false;nextFlick=15+Math.random()*15;flickT=0;Dp=null;DpTile=-1;
@@ -533,11 +533,12 @@ function actionHere(){
 }
 function doAction(){const a=actionHere();if(a)a.fn()}
 function hideIn(lk){
-  hidden=lk;hideT=0;lightWas=light.on;light.on=false;
+  hideLearn++;
+  hidden=lk;hideT=0;lk.checked=false;lk.checkT=0;lightWas=light.on;light.on=false;
   // it saw you climb in if it's close and can see you
   hidden.spotted=Math.hypot(E.x-P.x,E.y-P.y)<3.5&&los(E.x,E.y,P.x,P.y);
   P.x=lk.x;P.y=lk.y;lure=null;creak();
-  say(hidden.spotted?'It saw you get in.':'Stay quiet. Watch through the slats.');
+  say(hidden.spotted?'It saw you get in.':hideLearn===3&&!coop?'It knows where you hide now. Stay very still.':'Stay quiet. Watch through the slats.');
 }
 function leaveLocker(){
   const lk=hidden;hidden=null;if(lk.close){lk.close=false;award('hider')}light.on=lightWas&&light.bat>0;if(lure?.wander)lure=null;creak();
@@ -636,6 +637,16 @@ function resumeGame(){
   if(state!=='pause')return;
   $('pause').style.display='none';state='play';if(A&&A.state==='suspended')A.resume();narr?.play().catch(()=>{});
 }
+function startFinale(){
+  finale={t:easy?110:nightmare?60:80,rum:0,crash:4};mboxStop(false);
+  // it comes from behind her, bent over backwards, already running
+  const D=bfs(P.x|0,P.y|0),De=bfs(exitS.x|0,exitS.y|0),me=De[(P.x|0)+(P.y|0)*S],opts=[];
+  for(let i=0;i<S*S;i++)if(D[i]>=6&&D[i]<=10&&De[i]>me)opts.push(i);
+  const c=opts[Math.random()*opts.length|0];if(c!==undefined){E.x=c%S+.5;E.y=(c/S|0)+.5}
+  E.bend=true;E.chase=true;E.unbend=0;E.stun=0;bonesCrack(panOf(E));stinger();playSfx('scream',.5,panOf(E),.8);
+  noise(2.5,55,1,.5,'lowpass');
+  say('The house is coming down! Get Papa to the door!',4);
+}
 function freePapa(){
   papa.st='follow';trail=[];papa.freed=(papa.freed||0)+1;
   playSfx('pp4',1);setTimeout(()=>playSfx('pp2',1,panOf(papa)),1500);
@@ -726,6 +737,7 @@ function mboxStop(windDown){
   if(windDown){m.src.playbackRate.setValueAtTime(1,t);m.src.playbackRate.linearRampToValueAtTime(.35,t+.9);m.g.gain.setTargetAtTime(0,t+.5,.15);m.src.stop(t+1.4)}
   else{m.g.gain.setTargetAtTime(0,t,.05);m.src.stop(t+.3)}
 }
+let hideLearn=0,stareLearn=0,finale=null,shakeV=0,dust=[];
 let Dl=null,trailT=0,lastFind=0,trailShow=0;
 const LULLABY=[880,1047,988,880,784,880,659,0,698,784,880,784,698,659,587,659,0,0];
 function bonesCrack(pan){
@@ -814,6 +826,7 @@ function drawGrab(dt){
   if(g.t>=4){const who=g.who;grabS=null;scareImg=who==='D'?ART.dollFace:who==='C'?ART.sf[1]:[ART.face,ART.sf[0],ART.sf[2]][Math.random()*3|0];if(who==='E'&&coop)sendCreatureAway();else if(who==='C')crawlAway();else if(who==='D')dollAway();state='play';caught()}
 }
 function caught(){
+  finale=null;shakeV=0;
   mboxStop(false);
   caughtRun=true;state='scare';scareT=0;scream();hidden=null;
   ['hud','fl','th','mp','chk','wb','pz','act','joy'].forEach(i=>$(i).style.display='none');actNow=null;document.exitPointerLock?.();
@@ -880,6 +893,7 @@ function sendCreatureAway(){
   if(best>=0){E.x=best%S+.5;E.y=(best/S|0)+.5;E.tx=null}
 }
 function winGame(followed){
+  finale=null;shakeV=0;dust=[];
   mboxStop(false);
   endless=false;
   const t=Math.round(totalT),b=best.get(),rec=!nightmare&&!continued&&(!b||t<b);if(rec)best.set(t);  // a continued run escaped, but isn't a best time
@@ -988,6 +1002,15 @@ function update(dt){
   }
 
   // Papa: he calls out until she finds him, then follows her footsteps
+  // the finale runs on: the house shakes, Wisp lights the way out, the clock counts down
+  if(!finale&&!coop&&!endless&&floor===FLOORS&&papa&&papa.st==='follow'&&sigils.every(x=>x.got))startFinale();
+  if(finale){
+    finale.t-=dt;trailShow=Math.max(trailShow,1);shakeV=.35+.65*Math.max(0,1-finale.t/20);
+    finale.rum-=dt;if(finale.rum<=0){finale.rum=.7+Math.random()*.8;noise(1.1,55+Math.random()*30,1,.32,'lowpass')}
+    finale.crash-=dt;if(finale.crash<=0){finale.crash=3+Math.random()*4;noise(.5,900,1,.35,'lowpass');noise(1.2,120,1,.4,'lowpass',A.currentTime+.05);
+      for(let i=0;i<26;i++)dust.push({x:Math.random(),y:-Math.random()*.3,v:.25+Math.random()*.5,s:.6+Math.random()*1.6})}
+    if(finale.t<=0){finale=null;shakeV=0;say('The ceiling gives way!',2);caught();return}
+  }
   if(papa){
     const pd2=Dp?Dp[(papa.x|0)+(papa.y|0)*S]:-1;
     if(papa.st==='chained'){papaCallT-=dt;if(papaCallT<=0){papaCallT=13+Math.random()*9;const g=pd2>=0?Math.max(.12,1-pd2/32):.12;playSfx('pp'+(papaCallN++%2),g,panOf(papa))}}
@@ -1014,7 +1037,13 @@ function update(dt){
   // hiding: it wanders while it doesn't know where you are; it gets curious if you stay too long
   if(hidden){
     hideT+=dt;if(Math.hypot(E.x-P.x,E.y-P.y)<2.5||(C&&Math.hypot(C.x-P.x,C.y-P.y)<2.5))hidden.close=true;
-    if(!hidden.spotted&&hideT>22){hidden.spotted=true;say("It's checking the lockers. Get out!");stinger()}
+    // the more she hides, the sooner it comes looking; once it knows, it stops at lockers it passes
+    if(!hidden.spotted&&hideT>(hideLearn>=3?Math.max(8,22-4*(hideLearn-2)):22)){hidden.spotted=true;say("It's checking the lockers. Get out!");stinger()}
+    if(!coop&&hideLearn>=3&&!hidden.spotted&&!hidden.checked&&Math.hypot(E.x-P.x,E.y-P.y)<2.2){hidden.checked=true;hidden.checkT=1.4;
+      noise(.08,300,3,.4,'bandpass');noise(.08,300,3,.4,'bandpass',A.currentTime+.32);noise(.08,300,3,.45,'bandpass',A.currentTime+.62)}  // knock. knock. knock.
+    if(hidden&&hidden.checkT>0){hidden.checkT-=dt;if(hidden.checkT<=0){
+      if(Math.random()<Math.min(.7,.25+.12*hideLearn)){hidden.spotted=true;creak();playSfx('scream',.5,0,1.2);stinger();say('It tore the door open!',2.5)}
+      else say('It moves on. For now.',2.5)}}
   }
   if(lure){lure.t-=dt;if(lure.t<=0){lure=null;stoneS=null}}
   else if(stoneS&&coop?.role==='guest'){stoneS.life=(stoneS.life||7)-dt;if(stoneS.life<=0)stoneS=null}
@@ -1049,12 +1078,13 @@ function update(dt){
     // it sees her with the light off it: a screech, and it charges until she lights it or gets away
     E.chaseCd=(E.chaseCd||0)-dt;
     if(!E.chase&&!isLit&&!lure&&!meSafe&&pd>=0&&pd<=6&&timeIn>4&&los(E.x,E.y,P.x,P.y)){E.chase=true;if(!E.bend){E.bend=true;bonesCrack(panOf(E))}E.unbend=0;if(E.chaseCd<=0){E.chaseCd=8;playSfx('scream',.32,panOf(E),.7);noise(.5,120,1,.25,'lowpass')}}
-    if(E.chase&&(isLit||lure||meSafe||pd<0||pd>9)){E.chase=false;E.unbend=1.6+Math.random()}
+    if(finale&&!isLit){E.chase=true;E.bend=true}
+    if(!finale&&E.chase&&(isLit||lure||meSafe||pd<0||pd>9)){E.chase=false;E.unbend=1.6+Math.random()}
     if(E.bend&&!E.chase){E.unbend-=dt;if(E.unbend<=0){E.bend=false;bonesCrack(panOf(E))}}
     // stare it down: keep the light on it while it's close and it gives up the hall (else a frozen one can block the only way on)
     const held=isLit||(light.on&&litBy(E,{x:P.x,y:P.y,a:P.a,bat:light.bat}));  // a flicker doesn't break the stare
     if(held&&pd>=0&&pd<=5){E.stare=(E.stare||0)+dt;
-      if(E.stare>=(easy?2.5:4)){E.stare=0;sendCreatureAway();playSfx('whisper',.6,panOf(E),.7);say('It shrinks from the light and slips away into the dark.',3)}
+      if(!finale&&E.stare>=(easy?2.5:4)+1.2*Math.min(stareLearn,3)){E.stare=0;stareLearn++;if(stareLearn===2)setTimeout(()=>say("It's getting used to your light.",3),3200);sendCreatureAway();playSfx('whisper',.6,panOf(E),.7);say('It shrinks from the light and slips away into the dark.',3)}
     }else E.stare=Math.max(0,(E.stare||0)-dt);
     if(!isLit&&timeIn>4&&!(E.stun>0)){
       // it hears you run: a little faster while your feet are loud
@@ -1264,7 +1294,7 @@ function render(t){
   const dx=Math.cos(P.a),dy=Math.sin(P.a),pX=-dy*.66,pY=dx*.66;
   const on=light.on&&light.flick,pow=on?.3+.7*Math.min(1,light.bat/40):0;
   for(let x=0;x<W;x++){const s=x/W-.5;cone[x]=pow*Math.exp(-s*s/(easy?.04:.031))}
-  const TH=theme(),hz=H/2+bob,[ambR,ambG,ambB]=TH.amb.map(v=>v*(easy?1:.7));   // each floor's own cold dark where nothing is lit
+  const TH=theme(),hz=H/2+bob+(shakeV?(Math.random()-.5)*shakeV*H*.025:0),[ambR,ambG,ambB]=TH.amb.map(v=>v*(easy?1:.7));   // each floor's own cold dark where nothing is lit
   gatherLights(t);
   const T0=tint[0],T1=tint[1],T2=tint[2];
   // floor + ceiling
@@ -1396,6 +1426,9 @@ function render(t){
     }
   }
   cx.putImageData(img,0,0);
+  if(dust.length){cx.fillStyle='rgba(150,140,125,.75)';for(const d of dust){d.y+=d.v*.016;d.x+=(Math.random()-.5)*.002;cx.fillRect(d.x*W,d.y*H,d.s,d.s*1.6)}dust=dust.filter(d=>d.y<1.05)}
+  if(finale){const s=Math.max(0,Math.ceil(finale.t)),txt=`GET OUT  ${s/60|0}:${String(s%60).padStart(2,'0')}`;
+    cx.font='bold 14px Georgia';cx.textAlign='center';cx.fillStyle=s<=15&&s%2?'rgba(255,70,50,.95)':'rgba(240,220,190,.9)';cx.fillText(txt,W/2,40);cx.textAlign='left'}
   if((trailShow>0||easy&&!nightmare)&&!hidden&&typeof Dt!=='undefined'&&Dt){
     const fade=easy&&trailShow<=0?.35:Math.min(1,trailShow/1.5),pts=[];let cxp=P.x|0,cyp=P.y|0;
     for(let k=0;k<11;k++){let nb=null,bd=Dt[cxp+cyp*S];if(!(bd>0))break;for(const [a,b] of DIRS){const n=cxp+a+(cyp+b)*S;if(Dt[n]>=0&&Dt[n]<bd){bd=Dt[n];nb=[cxp+a,cyp+b]}}if(!nb)break;cxp=nb[0];cyp=nb[1];if(k>0)pts.push([cxp+.5,cyp+.5,k])}
@@ -1655,7 +1688,7 @@ async function openLobby(code,role){
   clearInterval(lobbyT);lobbyT=setInterval(draw,500);draw();
 }
 function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy',inf=false){
-  endless=inf;nightmare=nm;continued=cont;easy=!nm&&ez;caughtRun=false;
+  hideLearn=0;stareLearn=0;endless=inf;nightmare=nm;continued=cont;easy=!nm&&ez;caughtRun=false;
   audioInit();A.resume();music.pause();ambTo(.32,3);totalT=0;runGems=0;tint=LIGHTS[save.light].t;newGame(fl);state='play';
   $('ui').style.display='none';['hud','fl','th','mp','chk','wb','pz'].forEach(i=>$(i).style.display='block');
   stamina=100;winded=false;running=false;
