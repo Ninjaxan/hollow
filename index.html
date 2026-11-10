@@ -442,7 +442,7 @@ function netSend(){
   const now=performance.now();if(now-(coop.sent||0)<66)return;coop.sent=now;
   const r2=v=>Math.round(v*100)/100;
   const p={role:coop.role,n:save.name.slice(0,12),c:save.light,p:[r2(P.x),r2(P.y),r2(P.a)],l:light.on&&light.flick?1:0,
-    h:hidden&&!hidden.spotted?1:0,f:floor,sg:mask(sigils),k:(keyS?.got||hasKey)?1:0,g:gate?.open?1:0,st:state,lr:coop.lr||null};
+    h:hidden&&!hidden.spotted?1:0,f:floor,sg:mask(sigils),k:(keyS?.got||hasKey)?1:0,g:gate?.open?1:0,st:state,lr:coop.lr||null,sq:coop.sq||null};
   p.mv=moving?1:0;p.rn=running?1:0;p.ck=chalk;p.wb=burstN;  // the host's crawler listens for the friend's feet too
   if(coop.role==='host'){p.e=[r2(E.x),r2(E.y),E.bend?1:0];p.cg=coop.cg||0;p.nm=nightmare?1:0;p.cr=C?[r2(C.x),r2(C.y),C.hunt?1:0]:null;p.dl=Dl?[r2(Dl.x),r2(Dl.y),Dl.music?1:0,Dl.angry>0?1:0]:null}
   coop.room.presence(p).catch(()=>{});
@@ -476,6 +476,8 @@ function netRecv(dt){
     coop.lastLr=q.lr[0];
     if(coop.lastLr!==undefined&&q.lr[0]){stoneS={x:q.lr[1],y:q.lr[2],t:'stone'};clatter(stoneS);if(coop.role==='host')setLure(stoneS.x,stoneS.y,7,false)}
   }
+  // the guest's scare: the host puts the creature where the guest asked
+  if(coop.role==='host'&&Array.isArray(q.sq)&&q.sq[0]>(coop.lastSq||0)){coop.lastSq=q.sq[0];if(q.sq[4]===floor)scarePlace(q.sq[1],q.sq[2],q.sq[3])}
   // guest: the creature lives on the host
   fs.mv=!!q.mv;fs.rn=!!q.rn;
   if(coop.role==='guest'&&Dl&&Array.isArray(q.dl)){Dl.x+=(q.dl[0]-Dl.x)*k;Dl.y+=(q.dl[1]-Dl.y)*k;Dl.music=!!q.dl[2];Dl.angry=q.dl[3]?1:0}
@@ -547,7 +549,7 @@ function hideIn(lk){
   // it saw you climb in if it's close and can see you
   hidden.spotted=Math.hypot(E.x-P.x,E.y-P.y)<3.5&&los(E.x,E.y,P.x,P.y);
   P.x=lk.x;P.y=lk.y;lure=null;creak();
-  say(hidden.spotted?'It saw you get in.':hideLearn===3&&!coop?'It knows where you hide now. Stay very still.':'Stay quiet. Watch through the slats.');
+  say(hidden.spotted?'It saw you get in.':hideLearn===3?'It knows where you hide now. Stay very still.':'Stay quiet. Watch through the slats.');
 }
 function leaveLocker(){
   const lk=hidden;hidden=null;if(lk.close){lk.close=false;award('hider')}light.on=lightWas&&light.bat>0;if(lure?.wander)lure=null;creak();
@@ -652,25 +654,31 @@ function whisper(force){
   // from behind her, hard to one side
   return playSfx(k,easy?.45:.7,Math.random()<.5?-.85:.85,.97+Math.random()*.06);
 }
+function scarePlace(k,x,y){
+  // show it here right away; on a guest the host moves the real one a moment later
+  if(k==='E'){E.x=x;E.y=y;E.chase=false;E.bend=false;E.stun=0}
+  else if(k==='C'&&C){C.x=x;C.y=y;C.hunt=true;setTimeout(()=>{if(C&&state==='play'&&coop?.role!=='guest')crawlAway()},1300)}
+  else if(k==='D'&&Dl){Dl.x=x;Dl.y=y;Dl.music=false;Dl.mt=4;Dl.grace=99;Dl.angry=0;setTimeout(()=>{if(Dl)Dl.grace=0},3800)}
+  if(coop?.role==='guest'){coop.sqN=(coop.sqN||0)+1;coop.sq=[coop.sqN,k,Math.round(x*100)/100,Math.round(y*100)/100,floor];netSendNow()}
+}
 function floorScare(found){
   if(state!=='play'||hidden||scared[floor]||finale)return;
   const th=(floor-1)%4+1;
   if(th===1&&found===1){  // a door slams shut right behind her
     scared[floor]=1;noise(.25,160,1,.9,'lowpass');noise(.12,700,2,.5,'bandpass');shakeV=1;setTimeout(()=>{if(!finale)shakeV=0},350);
     say('Something shut the door behind you.',3);
-  }else if(th===2&&found===2){  // the lantern dies; something whispers; the light comes back and it's right there
+  }else if(th===2&&found===(coop?1:2)){  // the lantern dies; something whispers; the light comes back and it's right there
     scared[floor]=1;const was=light.on;light.on=false;light.flick=false;whisper(true);
     setTimeout(()=>{if(state!=='play')return;
-      for(let d=2.4;d>=1.4;d-=.2){const x=P.x+Math.cos(P.a)*d,y=P.y+Math.sin(P.a)*d;if(!solid(x,y)&&los(P.x,P.y,x,y)){E.x=x;E.y=y;E.chase=false;E.bend=false;E.stun=0;break}}
+      for(let d=2.4;d>=1.4;d-=.2){const x=P.x+Math.cos(P.a)*d,y=P.y+Math.sin(P.a)*d;if(!solid(x,y)&&los(P.x,P.y,x,y)){scarePlace('E',x,y);break}}
       light.on=was||light.bat>0;light.flick=true;stinger();playSfx('scream',.4,0,1.1)},2100);
   }else if(th===3&&C&&found===1){  // the crawler drops from the ceiling in front of her, then skitters off
     for(let d=2.6;d>=1.6;d-=.2){const x=P.x+Math.cos(P.a)*d,y=P.y+Math.sin(P.a)*d;if(!solid(x,y)&&los(P.x,P.y,x,y)){
-      scared[floor]=1;C.x=x;C.y=y;C.hunt=true;noise(.2,90,1,.8,'lowpass');stinger();playSfx('scream',.45,0,1.6);
-      setTimeout(()=>{if(C&&state==='play')crawlAway()},1300);break}}
+      scared[floor]=1;scarePlace('C',x,y);noise(.2,90,1,.8,'lowpass');stinger();playSfx('scream',.45,0,1.6);break}}
   }else if(th===4&&Dl&&found===1){  // the music stops, and the doll is in the hall she just came through
     const D=bfs(P.x|0,P.y|0),bx=P.x-Math.cos(P.a)*3,by=P.y-Math.sin(P.a)*3;
     let best=null,bd=1e9;for(let i=0;i<S*S;i++)if(D[i]>=2&&D[i]<=5){const x=i%S+.5,y=(i/S|0)+.5;if(onScreen({x,y},.75))continue;const dd=Math.hypot(x-bx,y-by);if(dd<bd){bd=dd;best=[x,y]}}
-    if(best){scared[floor]=1;Dl.x=best[0];Dl.y=best[1];Dl.music=false;Dl.mt=4;Dl.grace=99;Dl.angry=0;if(mbox)mboxStop(true);setTimeout(()=>{if(Dl)Dl.grace=0},3800)}
+    if(best){scared[floor]=1;scarePlace('D',best[0],best[1]);if(mbox)mboxStop(true)}
   }
 }
 function startFinale(){
@@ -678,10 +686,10 @@ function startFinale(){
   // it comes from behind her, bent over backwards, already running
   const D=bfs(P.x|0,P.y|0),De=bfs(exitS.x|0,exitS.y|0),me=De[(P.x|0)+(P.y|0)*S],opts=[];
   for(let i=0;i<S*S;i++)if(D[i]>=6&&D[i]<=10&&De[i]>me)opts.push(i);
-  const c=opts[Math.random()*opts.length|0];if(c!==undefined){E.x=c%S+.5;E.y=(c/S|0)+.5}
-  E.bend=true;E.chase=true;E.unbend=0;E.stun=0;bonesCrack(panOf(E));stinger();playSfx('scream',.5,panOf(E),.8);
+  const c=opts[Math.random()*opts.length|0];if(c!==undefined&&coop?.role!=='guest'){E.x=c%S+.5;E.y=(c/S|0)+.5}
+  if(coop?.role!=='guest'){E.bend=true;E.chase=true;E.unbend=0;E.stun=0}bonesCrack(panOf(E));stinger();playSfx('scream',.5,panOf(E),.8);
   noise(2.5,55,1,.5,'lowpass');
-  say('The house is coming down! Get Papa to the door!',4);
+  say(coop?`The house is coming down! Get to the door, both of you!`:'The house is coming down! Get Papa to the door!',4);
 }
 function freePapa(){
   papa.st='follow';trail=[];papa.freed=(papa.freed||0)+1;
@@ -996,7 +1004,7 @@ function update(dt){
   for(const sg of sigils)if(!sg.got&&Math.hypot(sg.x-P.x,sg.y-P.y)<.5){
     sg.got=true;light.bat=Math.min(100,light.bat+30);tone(220,2.2,.25);tone(331,2.2,.15);if(coop?.role!=='guest')hear(sg.x,sg.y,8);
     const left=sigils.filter(x=>!x.got).length;
-    if(!coop)setTimeout(()=>floorScare(3-left),1800+Math.random()*2500);
+    {const n=coop?(scared['n'+floor]=(scared['n'+floor]||0)+1):3-left;setTimeout(()=>floorScare(n),1800+Math.random()*2500)}
     say(left?`A sigil. ${left} left. Something heard that.`:'The last sigil. The door is open. Run.');
   }
   for(const gm of gems)if(!gm.got&&Math.hypot(gm.x-P.x,gm.y-P.y)<.5){
@@ -1041,17 +1049,17 @@ function update(dt){
 
   // Papa: he calls out until she finds him, then follows her footsteps
   // the finale runs on: the house shakes, Wisp lights the way out, the clock counts down
-  if(!finale&&!coop&&!endless&&floor===FLOORS&&papa&&papa.st==='follow'&&sigils.every(x=>x.got))startFinale();
+  if(!finale&&!endless&&floor===FLOORS&&(coop||papa&&papa.st==='follow')&&sigils.every(x=>x.got))startFinale();
   // whispers come every so often, sooner when it's near; it breathes when it's right behind her
-  if(!hidden&&!coop&&timeIn>12){whisperT-=dt*(Math.hypot(E.x-P.x,E.y-P.y)<6?2:1);if(whisperT<=0){whisperT=(easy?70:nightmare?28:42)+Math.random()*30;whisper()}}
-  breathT-=dt;if(breathT<=0&&!coop&&state==='play'){const ed2=Math.hypot(E.x-P.x,E.y-P.y);
+  if(!hidden&&timeIn>12){whisperT-=dt*(Math.hypot(E.x-P.x,E.y-P.y)<6?2:1);if(whisperT<=0){whisperT=(easy?70:nightmare?28:42)+Math.random()*30;whisper()}}
+  breathT-=dt;if(breathT<=0&&state==='play'){const ed2=Math.hypot(E.x-P.x,E.y-P.y);
     if(ed2<3.2&&!onScreen(E,.9)){breathT=5+Math.random()*2;playSfx('breath',.55*(1-ed2/3.2)+.15,panOf(E))}else breathT=.5}
   if(finale){
     finale.t-=dt;trailShow=Math.max(trailShow,1);shakeV=.35+.65*Math.max(0,1-finale.t/20);
     finale.rum-=dt;if(finale.rum<=0){finale.rum=.7+Math.random()*.8;noise(1.1,55+Math.random()*30,1,.32,'lowpass')}
     finale.crash-=dt;if(finale.crash<=0){finale.crash=3+Math.random()*4;noise(.5,900,1,.35,'lowpass');noise(1.2,120,1,.4,'lowpass',A.currentTime+.05);
       for(let i=0;i<26;i++)dust.push({x:Math.random(),y:-Math.random()*.3,v:.25+Math.random()*.5,s:.6+Math.random()*1.6})}
-    if(finale.t<=0){finale=null;shakeV=0;say('The ceiling gives way!',2);caught();return}
+    if(finale.t<=0){finale=null;shakeV=0;say('The ceiling gives way!',2);caught();return}  // ponytail: in co-op, respawn restarts the finale with a fresh clock
   }
   if(papa){
     const pd2=Dp?Dp[(papa.x|0)+(papa.y|0)*S]:-1;
@@ -1081,7 +1089,7 @@ function update(dt){
     hideT+=dt;if(Math.hypot(E.x-P.x,E.y-P.y)<2.5||(C&&Math.hypot(C.x-P.x,C.y-P.y)<2.5))hidden.close=true;
     // the more she hides, the sooner it comes looking; once it knows, it stops at lockers it passes
     if(!hidden.spotted&&hideT>(hideLearn>=3?Math.max(8,22-4*(hideLearn-2)):22)){hidden.spotted=true;say("It's checking the lockers. Get out!");stinger()}
-    if(!coop&&hideLearn>=3&&!hidden.spotted&&!hidden.checked&&Math.hypot(E.x-P.x,E.y-P.y)<2.2){hidden.checked=true;hidden.checkT=1.4;
+    if(hideLearn>=3&&!hidden.spotted&&!hidden.checked&&Math.hypot(E.x-P.x,E.y-P.y)<2.2){hidden.checked=true;hidden.checkT=1.4;
       noise(.08,300,3,.4,'bandpass');noise(.08,300,3,.4,'bandpass',A.currentTime+.32);noise(.08,300,3,.45,'bandpass',A.currentTime+.62)}  // knock. knock. knock.
     if(hidden&&hidden.checkT>0){hidden.checkT-=dt;if(hidden.checkT<=0){
       if(Math.random()<Math.min(.7,.25+.12*hideLearn)){hidden.spotted=true;creak();playSfx('scream',.5,0,1.2);stinger();say('It tore the door open!',2.5)}
