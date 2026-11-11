@@ -47,6 +47,8 @@ button.fr{background:#001a12;border-color:#2a7}
 #chk{top:154px}
 #wb{top:202px;border-color:#7ab;color:#cef}
 #pz{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:none;padding:6px 14px;font-size:14px;min-width:0;z-index:5;opacity:.75}
+/* upright phones: the readout stays clear of the buttons, pause sits under them */
+@media (max-width:500px){#hud{font-size:12px;max-width:calc(100vw - 140px)}#pz{left:auto;right:12px;transform:none;top:250px}}
 #pause{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.78);z-index:20;text-align:center;padding:16px}
 #pause h2{letter-spacing:.3em;color:#ccc;font-weight:normal;margin:0 0 6px}
 #pause input[type=range]{width:220px;max-width:70vw}
@@ -144,7 +146,9 @@ const $=id=>document.getElementById(id);
 const cv=$('c'),cx=cv.getContext('2d');
 let W,H,WS,img,buf,zbuf,cone;
 function resize(){
-  W=innerWidth>=700?400:320;H=Math.max(160,Math.min(W*1.4|0,Math.round(W*(innerHeight/innerWidth||.5625))));  // tall phones: cap the pixel count, CSS stretches it  // sharper on tablets and computers
+  W=innerWidth>=700?400:320;const asp=innerHeight/innerWidth||.5625,budget=W*W*1.4;H=Math.round(W*asp);  // sharper on tablets and computers
+  if(W*H>budget){W=Math.round(Math.sqrt(budget/asp));H=Math.round(W*asp)}  // tall phones: same pixel count, but the right shape (it used to stretch 55% tall)
+  H=Math.max(160,H);
   cv.width=W;cv.height=H;WS=W/(2*0.66);
   img=cx.createImageData(W,H);buf=new Uint32Array(img.data.buffer);
   zbuf=new Float32Array(W);cone=new Float32Array(W);
