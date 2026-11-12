@@ -301,9 +301,9 @@ function newGame(fl,bat=100,tries=0){
   while(sigils.length<3&&pool.length){const c=pool.splice(rnd()*pool.length|0,1)[0];const p=at(c);if(sigils.every(s=>Math.hypot(s.x-p.x,s.y-p.y)>4))sigils.push({...p,t:'sigil'})}
   const ep=cells.filter(c=>D[c]>=Math.min(14,max-1));
   E={...at(ep[rnd()*ep.length|0]),t:'ent',tx:null,ty:null,bend:false,unbend:0,windup:0,chargeT:0};
-  // the Crawler lives on the last floor (and on floors 2-3 in Nightmare), far from where you start
+  // The Crawler debuts on floor two and learns to drop from the ceiling on floor three.
   C=null;
-  if(endless?(fl%4===3||fl>=6&&fl%4!==0):(fl===FLOORS-1||(nightmare&&fl>=2&&fl<FLOORS))){const cc=cells.filter(c=>D[c]>=max*.55&&Math.hypot(c%S+.5-E.x,(c/S|0)+.5-E.y)>3),c=cc.length?cc[rnd()*cc.length|0]:cells.find(c=>D[c]>=6&&Math.hypot(c%S+.5-E.x,(c/S|0)+.5-E.y)>3);
+  if(endless?(fl%4===3||fl>=6&&fl%4!==0):(fl>=2&&fl<FLOORS)){const cc=cells.filter(c=>D[c]>=max*.55&&Math.hypot(c%S+.5-E.x,(c/S|0)+.5-E.y)>3),c=cc.length?cc[rnd()*cc.length|0]:cells.find(c=>D[c]>=6&&Math.hypot(c%S+.5-E.x,(c/S|0)+.5-E.y)>3);
     if(c!==undefined)C={x:c%S+.5,y:(c/S|0)+.5,t:'crawl',hunt:false,D:null,tx:null,clk:1,sniff:0}}
   // the Nursery's doll: it creeps while its music box plays; when the music stops, so must you (solo)
   mboxStop(false);Dl=null;
@@ -348,6 +348,18 @@ function newGame(fl,bat=100,tries=0){
   }
   if(gate)keyS=place(1,'key',regionA)[0]||null;
   if(gate&&!keyS){grid[gate.cy][gate.cx]=0;gate=null}  // ponytail: no room for a key, so no gate this floor
+  const specialist=Dl||C;
+  if(specialist){
+    const reachable=gate?regionA:D;
+    const first=sigils.filter(s=>reachable[(s.x|0)+(s.y|0)*S]>=0)
+      .sort((a,b)=>reachable[(a.x|0)+(a.y|0)*S]-reachable[(b.x|0)+(b.y|0)*S])[0];
+    if(first){
+      const route=bfs(first.x|0,first.y|0,true);
+      const approach=cells.filter(c=>route[c]>=3&&route[c]<=7&&reachable[c]>=5&&
+        Math.hypot(c%S+.5-E.x,(c/S|0)+.5-E.y)>=2&&!taken.some(o=>((o.x|0)+(o.y|0)*S)===c));
+      if(approach.length)Object.assign(specialist,at(approach[rnd()*approach.length|0]));
+    }
+  }
   lockers=place(fl===1?2:3,'locker');
   gems=place(2,'gem');
   pages=fl<=FLOORS?place(2,'page').map((p,i)=>({...p,idx:(fl-1)*2+i})):[];
@@ -660,7 +672,13 @@ function netRecv(dt){
   fs.x+=(q.p[0]-fs.x)*k;fs.y+=(q.p[1]-fs.y)*k;fs.a=q.p[2];fs.c=LIGHTS[q.c|0]?.c||LIGHTS[0].c;fs.l=!!q.l;fs.h=!!q.h;fs.uses=q.hu||1;
   fs.power=Number.isFinite(q.lb)?Math.max(0,Math.min(1,q.lb)):1;
   // shared finds
-  sigils.forEach((s,i)=>{if(!s.got&&(q.sg>>i)&1){s.got=true;tone(220,1.5,.12);say(`${fname()} found a sigil.`);if(coop.role==='host'){crawlerHearsSigil(s);nurseryHearsSigil()}}});
+  sigils.forEach((s,i)=>{
+    if(s.got||!((q.sg>>i)&1))return;
+    s.got=true;tone(220,1.5,.12);
+    const first=sigils.filter(g=>g.got).length===1;
+    if(coop.role==='host'){crawlerHearsSigil(s,fs);nurseryHearsSigil(s,fs)}
+    say(sigilCue(first)||`${fname()} found a sigil.`,first?4:3);
+  });
   if(q.k&&keyS&&!keyS.got){keyS.got=true;hasKey=true;say(`${fname()} found the key.`)}
   if(q.g&&gate&&!gate.open){
     grid[gate.cy][gate.cx]=0;gate.open=true;hasKey=false;noise(.9,300,2,.15,'bandpass');say(`${fname()} opened the gate.`);
@@ -1389,9 +1407,45 @@ let Dl=null,trailT=0,lastFind=0,trailShow=0;
 const LULLABY=[880,1047,988,880,784,880,659,0,698,784,880,784,698,659,587,659,0,0];
 const nurseryLength=()=>easy?3.6:nightmare?5.5:4.7;
 const dollWarning=()=>Dl.music&&Dl.mt<=(Dl.nursery==='winding'?1.5:.65);
-function nurseryHearsSigil(){
+function sigilCue(first){
+  if(!first)return '';
+  if(Dl)return 'The Doll heard the sigil. Stand still when its music stops.';
+  if(C)return 'The Crawler heard the sigil. Look for it on the ceiling.';
+  return '';
+}
+function stageSpecialist(o,sigil,viewer=P){
+  if(!sigil||!viewer)return false;
+  const distances=bfs(sigil.x|0,sigil.y|0,true);
+  if(distances[(o.x|0)+(o.y|0)*S]<0)return false;
+  const friend=friendHere()?coop.fs:null;
+  // Leave a monster alone if either player can already see it.
+  const other=friend&&friend!==viewer?friend:viewer===friend?P:null;
+  if([viewer,other].some(v=>v&&Math.hypot(v.x-o.x,v.y-o.y)<8&&los(v.x,v.y,o.x,o.y)))return false;
+  let best=null,score=-Infinity;
+  for(let i=0;i<distances.length;i++){
+    const d=distances[i];if(d<2||d>7)continue;
+    const x=i%S+.5,y=(i/S|0)+.5;
+    if(Math.hypot(x-viewer.x,y-viewer.y)<1.95||other&&Math.hypot(x-other.x,y-other.y)<2)continue;
+    if(Math.hypot(x-E.x,y-E.y)<1.25)continue;
+    const [cx,depth]=camSpaceFrom(viewer,{x,y});
+    const visible=los(viewer.x,viewer.y,x,y);
+    const inFront=depth>.1&&Math.abs(cx/depth)<.9;
+    const value=(visible?12:0)+(inFront?5:0)-Math.abs(d-3)*1.3;
+    if(value>score){score=value;best={x,y}}
+  }
+  if(!best)return false;
+  Object.assign(o,best);ACTOR_POSES.delete(o);
+  return true;
+}
+function nurseryHearsSigil(sigil,viewer=P){
   if(!Dl||scared[floor]||finale)return;
-  scared[floor]=1;Dl.nursery='queued';
+  scared[floor]=1;
+  const staged=Dl.angry<=0&&stageSpecialist(Dl,sigil,viewer);
+  if(sigil){
+    if(staged)Dl.reveal=.68;
+    E.stun=Math.max(E.stun||0,2.6);
+  }
+  Dl.nursery='queued';
 }
 function setNurseryQuiet(on){
   if(nurseryQuiet===on)return;
@@ -1468,7 +1522,7 @@ function dollStep(dt,Dp){
   }else{
     Dl.grace-=dt;
     if(Dl.grace<=0&&(iMove||fMove)&&Dl.angry<=0&&Dl.stun<=0){
-      Dl.angry=2.4;Dl.brake=0;Dl.target=fMove&&(!iMove||fd<dd)?'friend':'me';
+      Dl.angry=2.4;Dl.rushClock=0;Dl.brake=0;Dl.target=fMove&&(!iMove||fd<dd)?'friend':'me';
     }
     if(Dl.angry>0){
       const followingMotion=Dl.target==='friend'?fMove:iMove;
@@ -1486,7 +1540,10 @@ function dollStep(dt,Dp){
   const chasingFriend=Dl.angry>0?Dl.target==='friend':fd>=0&&(hidden||dd<0||fd<dd);
   const target=chasingFriend?f2:hidden?null:P;
   const G=chasingFriend?coop.Dq:Dp;
-  const sp=!target||!G||G[tile]<0||Dl.stun>0?0:Dl.angry>0?(easy?2:nightmare?3.3:2.9):Dl.music?(easy?.6:nightmare?1.05:.85):0;
+  Dl.reveal=Math.max(0,(Dl.reveal||0)-dt);
+  Dl.rushClock=Dl.angry>0?(Dl.rushClock||0)+dt:0;
+  const hitch=Dl.rushClock%.39,rush=hitch<.15?1.56:hitch<.26?.26:1.16;
+  const sp=!target||!G||G[tile]<0||Dl.stun>0||Dl.reveal>0?0:Dl.angry>0?(easy?2:nightmare?3.3:2.9)*rush:Dl.music?(easy?.6:nightmare?1.05:.85):0;
   if(sp>0){
     let tx=target.x,ty=target.y;const cx2=Dl.x|0,cy2=Dl.y|0,cd=G[tile];
     if(cd>1){for(const [a,b] of DIRS){const n=cx2+a+(cy2+b)*S;if(G[n]===cd-1){tx=cx2+a+.5;ty=cy2+b+.5;break}}}
@@ -1560,10 +1617,14 @@ function award(id){
 // ---------- the Crawler ----------
 const crawlerFloor=()=>(floor-1)%4===2;
 const crawlerWarning=()=>easy?1.25:nightmare?.8:1.02;
-function crawlerHearsSigil(sigil){
+function crawlerHearsSigil(sigil,viewer=P){
   if(!C)return;
-  if(crawlerFloor()&&!scared[floor]){
-    scared[floor]=1;C.sigilSound=sigil;
+  if(!C.introduced){
+    C.introduced=true;C.sigilSound=sigil;
+    if(crawlerFloor())scared[floor]=1;
+    if(!C.drop&&stageSpecialist(C,sigil,viewer))C.reveal=.72;
+    E.stun=Math.max(E.stun||0,2.6);
+    clicks(panOf(C),.20);
     releaseCrawlerSound();
   }else hear(sigil.x,sigil.y,8);
 }
@@ -1584,7 +1645,7 @@ function hear(x,y,r){
   return true;
 }
 function armCrawlerDrop(){
-  if(!crawlerFloor()||C.dropWait>0||!C.hunt||!C.goal)return;
+  if(!crawlerFloor()||C.reveal>0||C.dropWait>0||!C.hunt||!C.goal)return;
   const {x,y}=C.goal;
   if(Math.hypot(C.x-x,C.y-y)>.73||!los(C.x,C.y,x,y))return;
   C.dropN=(C.dropN||0)+1;
@@ -1620,7 +1681,10 @@ function crawlerDropCue(){
 }
 function crawlStep(dt){
   if(C.hunt&&(!C.goal||!C.D)){C.hunt=false;C.sniff=0}
-  const sp=(C.hunt?(easy?1.65:nightmare?3.1:2.65):.7)*dt;
+  if(C.reveal>0){C.reveal-=dt;return}
+  C.scuttle=C.hunt?(C.scuttle||0)+dt:0;
+  const stroke=Math.max(0,Math.sin(C.scuttle*17)),surge=.60+1.2*stroke*stroke;
+  const sp=(C.hunt?(easy?1.65:nightmare?3.1:2.65)*surge:.7)*dt;
   // it reached the sound: it sniffs around for a moment, then gives up and wanders
   if(C.hunt&&Math.hypot(C.goal.x-C.x,C.goal.y-C.y)<.3){C.sniff+=dt;if(C.sniff>1.8){C.hunt=false;C.D=null;C.sniff=0}return}
   if(!C.hunt&&(!C.D||C.D[(C.x|0)+(C.y|0)*S]===0)){
@@ -2125,14 +2189,15 @@ function update(dt){
   // pickups
   for(const sg of sigils)if(!sg.got&&Math.hypot(sg.x-P.x,sg.y-P.y)<.5){
     sg.got=true;light.bat=Math.min(100,light.bat+30);tone(220,2.2,.25);tone(331,2.2,.15);
-    if(coop?.role!=='guest'){crawlerHearsSigil(sg);nurseryHearsSigil()}
+    if(coop?.role!=='guest'){crawlerHearsSigil(sg);nurseryHearsSigil(sg)}
     const left=sigils.filter(x=>!x.got).length;
     if((floor-1)%4===0){
       const n=coop?(scared['n'+floor]=(scared['n'+floor]||0)+1):3-left;
       const levelLight=light;
       setTimeout(()=>{if(light===levelLight)floorScare(n)},1800+Math.random()*2500);
     }
-    say(left?`A sigil. ${left} left. Something heard that.`:'The last sigil. The door is open. Run.');
+    const cue=sigilCue(left===sigils.length-1);
+    say(cue|| (left?`A sigil. ${left} left. Something heard that.`:'The last sigil. The door is open. Run.'),cue?4:3);
   }
   const hostControlsBlackout=coop?.role==='guest'&&coop.fp?.bv===1;
   if(!hostControlsBlackout&&(floor-1)%4===1&&!scared[floor]&&sigils.filter(s=>s.got).length>=2){startBlackout();advanceBlackout(0)}
@@ -2170,7 +2235,7 @@ function update(dt){
       newGame(floor+1,Math.min(100,light.bat+25));netSendNow();
       if(endless){if(floor>(save.endBest||0)){save.endBest=floor;store()}if(floor>=8)award('deep')}
       else if(!coop){save.ckpt={f:floor,nm:nightmare?1:0};store()}  // dying down here won't send her back to floor 1
-      say(endless?`Floor ${floor}.${floor===save.endBest?' Your deepest yet.':''}${Dl?' A music box is playing.':C?' Something clicks on the ceiling.':''}`:Dl?`Floor ${floor}. The nursery. A music box is playing somewhere. When the music stops, stand still.${papa?' And somewhere, a voice.':''}`:C?`Floor ${floor}. Something on the ceiling hunts by sound. Throw a stone to divert it. Keep clear of falling dust.${papa?' And somewhere, a voice.':''}`:floor===FLOORS?`Floor ${floor}. The last one. It's faster now.`:`Floor ${floor}. Deeper. Find the key to the gate.`,4);return;
+      say(endless?`Floor ${floor}.${floor===save.endBest?' Your deepest yet.':''}${Dl?' A music box is playing.':C?' Something clicks on the ceiling.':''}`:Dl?`Floor ${floor}. The nursery. A music box is playing somewhere. When the music stops, stand still.${papa?' And somewhere, a voice.':''}`:C?`Floor ${floor}. The Crawler hunts by sound. Throw a stone to divert it.${crawlerFloor()?' Keep clear of falling dust.':''}${papa?' And somewhere, a voice.':''}`:floor===FLOORS?`Floor ${floor}. The last one. It's faster now.`:`Floor ${floor}. Deeper. Find the key to the gate.`,4);return;
     }
     if(allGot){winGame(false);return}
     if(msgT<=0)say(`The door is sealed. ${sigils.filter(x=>!x.got).length} sigils left.`);
@@ -2223,7 +2288,7 @@ function update(dt){
     if(lure?.wander&&!(meSafe&&frSafe))lure=null;
     // floors 2-3: when it's far away and out of sight, it is suddenly a few steps behind you instead
     behindT-=dt;
-    if((floor>=2&&!easy||nightmare)&&behindT<=0&&!hidden&&!lure&&timeIn>15){
+    if((floor>=2&&!easy||nightmare)&&behindT<=0&&!hidden&&!lure&&timeIn>15&&(!C&&!Dl||nightmare)){
       behindT=55+Math.random()*40;
       if(pd>10&&!onScreen(E,.7)){
         const opts=[];for(let i=0;i<S*S;i++)if(Dp[i]>=5&&Dp[i]<=6&&camSpace({x:i%S+.5,y:(i/S|0)+.5})[1]<-.3)opts.push(i);
@@ -2254,7 +2319,8 @@ function update(dt){
     if(!isLit&&timeIn>4&&!(E.stun>0)&&E.windup===0&&(!inspection||inspection.stage==='approach')){
       const pace=(1.05+.12*Math.min(floor-1,5)+.28*sigils.filter(x=>x.got).length)*(lure?.wander?.6:1)*(nightmare?1.3:easy?.75:1)*(running&&!lure?1.22:1);
       const charge=easy?1.22:1.38+.45*Math.min(1,E.chargeT/.75);
-      const espd=(E.chase?Math.min(pace*charge,nightmare?4.65:easy?3.25:4.1):pace)*dt;
+      const bound=E.chase?.65+.70*Math.pow(.5+.5*Math.cos(E.chargeT*12),2):1;
+      const espd=(E.chase?Math.min(pace*charge,nightmare?4.65:easy?3.25:4.1)*bound:pace)*dt;
       // chase whoever is closest and not safely hidden
       let F=inspection?.D||lure?.D||Dp;
       if(!inspection&&!lure&&fs){
@@ -2293,7 +2359,7 @@ function update(dt){
         }else C.friendEar=0;
         crawlStep(dt);
         if(crawlerFloor())armCrawlerDrop();
-        else{
+        else if(C.hunt||nightmare||endless){
           if(f2&&!f2.h&&Math.hypot(C.x-f2.x,C.y-f2.y)<.5)catchFriend('C');
           if(!hidden&&Math.hypot(C.x-P.x,C.y-P.y)<.5){caught('C');return}
         }
@@ -2683,9 +2749,10 @@ function humanMesh(o,pose,t,form,limb){
   const chained=kind==='papa'&&o.st==='chained';
   const gait=pose.speed,phase=doll?Math.round(pose.phase*1.9)/1.9:pose.phase;
   const sway=Math.sin(t*2.3)*.006,step=Math.sin(phase)*gait,angry=doll&&o.angry>0;
-  const tilt=angry?Math.sin(t*34)*.014:doll&&o.warn?.032:0;
+  const hitch=angry?Math.sin(Math.floor(pose.phase*1.45)*1.9):0;
+  const tilt=angry?.024+hitch*.019:doll&&o.warn?.032:0;
   const reach=kind==='mara'&&morning?.upstream.stage==='knocking'?Math.max(0,Math.sin(t*18))*.18:0;
-  const lean=(angry?.063:gait*.025),breath=(doll?.002:.009)*Math.sin(t*2.6)+Math.abs(step)*.009;
+  const lean=(angry?.104+hitch*.018:gait*.025),breath=(doll?.002:.009)*Math.sin(t*2.6)+Math.abs(step)*.009;
   const shoulder=child?.123:.148;
   const torsoZ=.609+breath,headZ=.861+breath;
   const waist=[0,lean*.27,.485],neck=[tilt,lean*.9,.755+breath];
@@ -2701,8 +2768,8 @@ function humanMesh(o,pose,t,form,limb){
     form(ACTOR_ROUND,0,.082,.706,.051,.027,.024,doll?[205,156,133]:c.fold);
   }
   for(const side of [-1,1]){
-    const swing=step*side,lift=Math.max(0,-swing)*.056;
-    const foot=[side*.064,swing*.113,lift+.037];
+    const swing=step*side,lift=Math.max(0,-swing)*(angry?.097:.056);
+    const foot=[side*(angry?.086:.064),swing*(angry?.146:.113),lift+.037];
     const knee=[side*.068,swing*.065+.024,.245+lift*.38];
     limb([side*.072,0,waist[2]],knee,.038,skirt?c.dress:c.cloth);
     limb(knee,foot,.030,skirt?c.skin:c.dress);
@@ -2712,7 +2779,11 @@ function humanMesh(o,pose,t,form,limb){
     const elbow=[side*(shoulder+.033),-swing*.053+(held?.043:0),.552+breath];
     const wrist=held?[side*(kind==='nell'?.076:.096),.148,.552]:
       [side*(shoulder+.038),-swing*.099+(side===1?reach:0)+sway,.438+(side===1?reach*.74:0)];
-    if(angry){elbow[1]+=.055;wrist[1]+=.21;wrist[2]+=.12}
+    if(angry){
+      elbow[0]+=side*.034;elbow[1]+=.069;
+      wrist[0]+=side*(side===1?.027:-.037);
+      wrist[1]+=side===1?.25:.16;wrist[2]+=side===1?.24:.11;
+    }
     limb(armTop,elbow,child?.035:.045,c.cloth);
     limb(elbow,wrist,child?.028:.036,c.cloth);
     form(ACTOR_ROUND,...wrist,.026,.031,.039,c.skin);
@@ -2740,9 +2811,10 @@ function humanMesh(o,pose,t,form,limb){
   }
   form(ACTOR_ROUND,...neck,.040,.039,.053,c.skin);
   const headDepth=.012+lean,headWidth=child?.079:.076;
-  form(ACTOR_ROUND,tilt,headDepth-.023,headZ+.013,headWidth*1.15,.077,.113,c.hair);
-  form(ACTOR_ROUND,tilt,headDepth+.023,headZ,headWidth,.068,.101,c.face||c.skin);
-  form(ACTOR_ROUND,tilt-.022,headDepth+.014,headZ+.077,.075,.073,.050,c.hair);
+  const headRoll=angry?.28+hitch*.17:doll&&o.warn?.14:0;
+  form(ACTOR_ROUND,tilt,headDepth-.023,headZ+.013,headWidth*1.15,.077,.113,c.hair,headRoll);
+  form(ACTOR_ROUND,tilt,headDepth+.023,headZ,headWidth,.068,.101,c.face||c.skin,headRoll);
+  form(ACTOR_ROUND,tilt-.022,headDepth+.014,headZ+.077,.075,.073,.050,c.hair,headRoll);
   if(!c.face||!ART.actor.d)for(const side of [-1,1]){
     const eyeX=tilt+side*.030;
     form(ACTOR_ROUND,eyeX,headDepth+.084,headZ+.011,.017,.009,.011,doll?[178,156,142]:[183,164,146]);
@@ -2766,7 +2838,12 @@ function humanMesh(o,pose,t,form,limb){
       const x=tilt+side*(.067+curl*.007),y=headDepth-.016+Math.sin(curl*2+side)*.021;
       form(ACTOR_ROUND,x,y,headZ+.047-curl*.039,.038,.052,.043,c.hair);
     }
-    if(angry)limb([tilt+.063,headDepth+.059,headZ+.035],[tilt+.069,headDepth+.058,headZ-.039],.004,[97,72,66]);
+    if(angry){
+      const crack=[49,34,37];
+      limb([tilt+.057,headDepth+.071,headZ+.041],[tilt+.046,headDepth+.084,headZ+.006],.0038,crack);
+      limb([tilt+.046,headDepth+.084,headZ+.006],[tilt+.065,headDepth+.066,headZ-.028],.0035,crack);
+      form(ACTOR_ROUND,tilt+.024,headDepth+.092,headZ+.005,.006,.005,.005,[175,101,71,.63]);
+    }
   }
 }
 
@@ -2779,10 +2856,12 @@ function lamplighterMesh(o,pose,t,form,limb){
   const gait=pose.speed,phase=pose.phase,step=Math.sin(phase)*gait;
   const cloak=LAMPLIGHTER_CLOAK,trim=LAMPLIGHTER_TRIM,black=[17,16,20],bone=[147,137,115],eye=[249,229,184,.69];
   const bend=pose.bend;
-  const lunge=o.chase?.078:0,windup=o.windup>0?.082:0;
+  const gather=o.windup>0?Math.min(1,o.windup/.45):0;
+  const bound=o.chase&&gait>.05?Math.sin(phase*.55)*Math.min(1,gait):0;
+  const lunge=o.chase?.085+bound*.07-gather*.09:0;
   const breath=(o.mv?.009:.002)*Math.sin(t*3);
-  const hips=.44-bend*.12,shoulder=.77-bend*.16;
-  const headZ=.878-bend*.43+breath,headY=.102+bend*.19+lunge-windup*.48;
+  const hips=.44-bend*.12+bound*.044,shoulder=.77-bend*.16-bound*.07;
+  const headZ=.878-bend*.43+breath+bound*.055,headY=.102+bend*.19+lunge;
   const roll=Math.PI*bend,cs=Math.cos(roll),sn=Math.sin(roll);
   form(ACTOR_COAT,0,-bend*.10,hips+.06,.147,.096+bend*.06,.33-bend*.13,cloak);
   form(ACTOR_CLOTH,0,-bend*.08,.32-bend*.075,.169,.113,.29-bend*.09,LAMPLIGHTER_HEM);
@@ -2796,14 +2875,15 @@ function lamplighterMesh(o,pose,t,form,limb){
   limb([-.11,.025,.70],[-.07,.094,.34],.021,LAMPLIGHTER_HEM);
   limb([.11,.025,.67],[.07,.092,.30],.023,cloak);
   for(const side of [-1,1]){
-    const k=side*step,h=Math.max(0,-k)*.062;
-    const foot=[side*(.083+bend*.066),k*.18-bend*.12,h+.032];
+    const k=side*step,h=Math.max(0,-k)*(.062+bend*.06);
+    const foot=[side*(.083+bend*.066),k*(.18+bend*.09)-bend*.12,h+.032];
     const knee=[side*(.104+bend*.058),k*.085-bend*.17,hips*.55+h*.45];
     limb([side*.089,-bend*.09,hips],knee,.048,black);
     limb(knee,foot,.038,trim);
     form(ACTOR_ROUND,foot[0],foot[1]+.036,foot[2],.045,.078,.032,black);
-    const elbow=[side*(.224+bend*.043),-.10*k+bend*.115,shoulder-.195];
-    const hand=[side*(.239+bend*.017),-.16*k+bend*.25+lunge,shoulder-.42-bend*.102+Math.max(0,k)*bend*.07];
+    const elbow=[side*(.224+bend*.043),-.14*k+bend*.115,shoulder-.195+gather*.08];
+    const hand=[side*(.239+bend*.017),-k*(.16+bend*.13)+bend*.25+lunge,
+      Math.max(.045,shoulder-.42-bend*.102+Math.max(0,k)*bend*.12+gather*.09)];
     limb([side*.150,bend*.02,shoulder],elbow,.043,LAMPLIGHTER_SLEEVE);
     limb(elbow,hand,.027,bone);
     for(let f=0;f<3;f++){
@@ -2821,17 +2901,19 @@ const CRAWLER_LIMB=actorPaint([115,94,86],22,.84);
 const CRAWLER_HEAD=actorPaint([135,112,103],20,.97,true);
 function crawlerMesh(o,pose,t,form,limb){
   const skin=CRAWLER_LIMB,joint=[91,75,70],claw=[146,123,111];
-  const phase=pose.phase,wave=pose.speed*.105,headY=.225,headZ=.778+Math.sin(t*8)*.011;
-  form(ACTOR_ROUND,0,-.077,.881,.110,.230,.094,CRAWLER_BODY);
-  form(ACTOR_ROUND,0,.104,.869,.129,.129,.088,CRAWLER_BODY);
+  const phase=pose.phase,wave=pose.speed*(o.hunt?.152:.088),hang=o.hunt?.125:.045;
+  const twist=o.hunt?Math.sin(phase*.74)*.082:0;
+  const headY=.225+(o.hunt?.025:0),headZ=.778-hang+Math.sin(t*8)*.011;
+  form(ACTOR_ROUND,twist*.32,-.077,.881-hang*.41,.110,.230,.094,CRAWLER_BODY,twist);
+  form(ACTOR_ROUND,-twist*.22,.104,.869-hang*.57,.129,.129,.088,CRAWLER_BODY,-twist);
   form(ACTOR_ROUND,0,headY-.014,headZ+.009,.073,.091,.086,[48,42,41]);
   form(ACTOR_ROUND,0,headY+.021,headZ,.060,.084,.069,CRAWLER_HEAD);
   for(const side of [-1,1]){
     for(let i=0;i<3;i++){
       const stride=Math.sin(phase+i*2.1+side*1.57),anchor=.13-i*.15;
-      const knee=[side*(.247+i*.017),anchor-.066+stride*wave,.818+stride*wave*.13];
-      const toe=[side*(.356-i*.036),anchor+.056-stride*wave,.979-Math.max(0,stride)*wave*.65];
-      limb([side*.088,anchor,.885],knee,.026,joint);
+      const knee=[side*(.247+i*.017),anchor-.066+stride*wave,.818-hang*.54+stride*wave*.32];
+      const toe=[side*(.356-i*.036),anchor+.056-stride*wave,.979-Math.max(0,stride)*wave*.78];
+      limb([side*.088,anchor,.885-hang*.49],knee,.026,joint);
       limb(knee,toe,.018,skin);
       limb(toe,[toe[0]+side*.030,toe[1]+.048,toe[2]-.015],.009,claw);
     }
@@ -3759,7 +3841,10 @@ function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy',i
   $('ui').style.display='none';['hud','fl','th','mp','chk','wb','pz'].forEach(i=>$(i).style.display='block');
   stamina=100;winded=false;running=false;
   say(endless?`Endless Night. The floors don't stop. How deep can you get?${save.endBest?` Best: floor ${save.endBest}.`:''}`:nightmare?'Nightmare. It is faster, and your light burns quicker.':coop?`Find the sigils together. Wisp knows the way.`:`${save.name?save.name+', find':'Find'} the three sigils. Wisp knows the way.`,4);
-  if(cont)say(`Floor ${fl}. Back where it caught you. It remembers you too.`,4);
+  if(cont){
+    const clue=Dl?'Stand still when the Doll’s music stops.':C?'The Crawler follows sound. Check the ceiling.':'The Lamplighter stops in your beam.';
+    say(`Floor ${fl}. ${clue}`,4);
+  }
   netSendNow();
   // the very first time: a short page that sets up the story, with her drawing of Wisp
   if(!save.introSeen&&!coop){
@@ -3768,7 +3853,7 @@ function start(fl=1,nm=!!(save.wins&&save.nm),cont=false,ez=save.diff==='easy',i
     $('note').style.display='flex';
   }
 }
-const TITLE=`<h1>HOLLOW</h1><p>Four floors. On each, find the three sigils, then the door.<br>It only moves when your light is off it. Stare it down and it backs away. Listen for its steps.<br>Wisp knows the way. Follow amber lamps off the main route to find the house records.<br>Deep down in the nursery, when the music stops, stand still.</p>`;
+const TITLE=`<h1>HOLLOW</h1><p>Four floors. On each, find the three sigils, then the door.<br>Your light stops the Lamplighter. The Crawler hunts by sound. In the nursery, stand still when the Doll’s music stops.<br>Wisp knows the way. Follow amber lamps off the main route to find the house records.</p>`;
 menu(TITLE,'ENTER');
 
 let last=performance.now();
