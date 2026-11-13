@@ -384,6 +384,8 @@ function los(ax,ay,bx,by){const d=Math.hypot(bx-ax,by-ay),n=Math.ceil(d/0.1);for
 // ---------- state ----------
 let state='menu',P,E,sprites,sigils,exitS,light,timeIn,msgT=0,stingCd=0,wasSeen=false,flickT=0,nextFlick=0,beatT=0,stepT=0,bob=0,walkPh=0,Dp=null,DpTile=-1;
 let floor=1,totalT=0,ghost=null,eStepT=0,pet=null,petKey='',Dt=null,gems=[],runGems=0;
+let floorEscapeRoute=null;
+let firstEscape=true,escapeGrace=0;
 let footTrail=[],follower=null,nextFollower=0,annex=null,stair=null,morning=null,manor=null,cellarTrace=null;
 let blackout=null;
 let mobiles=[],mobileTurn=0,nurseryQuiet=false;
@@ -482,6 +484,8 @@ function buildManor(){
     ...room,idx,clue:{x:room.clue[0],y:room.clue[1],t:'manorNote',idx}
   }));
   const tiles=new Uint8Array(S*S);
+  const frames=[];
+  const frame=(x,y,width,a=Math.PI/2,style='oak',door=null)=>frames.push({x,y,width,a,style,door,t:'manorFrame'});
   const open=(x0,y0,x1,y1,id=0)=>{
     for(let y=y0;y<=y1;y++){grid[y].fill(0,x0,x1+1);tiles.fill(id,y*S+x0,y*S+x1+1)}
   };
@@ -493,6 +497,7 @@ function buildManor(){
     const y=Math.floor((y0+y1)/2);
     const west=x1<12;
     open(west?11:17,y,west?11:17,y+1);
+    frame(west?11.5:17.5,y+1,2,0);
   }
   // Secondary doors let the player circle a room during a chase.
   open(7,16,8,16);open(21,16,22,16);open(6,9,7,9);open(23,9,24,9);
@@ -502,11 +507,13 @@ function buildManor(){
   open(28,20,35,21);
   open(39,24,41,24);
   open(25,24,25,28);
+  for(const [x,y] of [[8,16.5],[22,16.5],[7,9.5],[24,9.5],[40,10.5],[40,16.5]])frame(x,y,2);
+  frame(35.5,7,2,0,'service');
   const service={stage:0,x:27,y:20,
     bell:{x:42.5,y:7.5,t:'manorBell'},
     tube:{x:41.64,y:13.5,t:'manorTube'},
     latch:{x:36.48,y:20.5,t:'manorLatch'},
-    parlor:{x:26.94,y:20.5,t:'manorFurniture',kind:'linen'},
+    parlor:{x:26.82,y:20.5,t:'manorFurniture',kind:'linen',a:Math.PI,shallow:true},
     answerIn:0};
   const post={stage:0,sequence:0,echo:0,x:40,y:25,
     door:{x:40.5,y:24.96,t:'morningDoor'},
@@ -516,7 +523,7 @@ function buildManor(){
     inner:{x:34.07,y:28.5,t:'morningDoor'},
     outer:{x:32.92,y:28.5,t:'morningDoor'}};
   const study={x:9,y:24,open:false,room:rooms[MANOR_ROOMS.length],
-    shelf:{x:9.5,y:23.84,t:'manorFurniture',kind:'books'},
+    shelf:{x:9.5,y:23.84,t:'manorFurniture',kind:'books',a:-Math.PI/2,shallow:true},
     books:[
       {x:8.78,y:23.53,t:'manorBook',title:'RED BOOK',color:[126,58,47]},
       {x:9.5,y:23.53,t:'manorBook',title:'GREEN BOOK',color:[75,102,67],inverted:true},
@@ -529,24 +536,36 @@ function buildManor(){
       {x:26.77,y:6.5,t:'manorSeal',mark:'CROSS'},
       {x:26.77,y:7.5,t:'manorSeal',mark:'STAR'}
     ]};
+  study.swing={panel:study.shelf,hinge:-.68,turn:1.52};
+  potting.swing={panel:{x:26.90,y:6.5,a:Math.PI,kind:'rabbitDoor',t:'manorFurniture'},hinge:.43,turn:-1.57};
+  service.swing={panel:service.parlor,hinge:-.51,turn:1.52};
+  post.swing={panel:{x:40.5,y:24.86,a:-Math.PI/2,kind:'postDoor',t:'manorFurniture'},hinge:-.43,turn:1.55};
+  frame(9.5,24.5,1,Math.PI/2,'secret',study);
+  frame(27.5,6.5,1,0,'secret',potting);
+  frame(27.5,20.5,1,0,'service',service);
+  frame(40.5,25.5,1,Math.PI/2,'secret',post);
+  frame(33.5,28.5,1,0,'service',post.shortcut);
   const lamps=rooms.map(r=>({x:r.clue.x-.60,y:r.clue.y+.32,t:'annexLamp',glow:r.prop==='planter'?'173,201,168':'255,177,92'}));
   lamps.push({x:12.55,y:16.8,t:'annexLamp'},{x:16.45,y:9.4,t:'annexLamp'},{x:13.65,y:2.7,t:'annexLamp'});
+  for(const lamp of lamps)lamp.t='manorLantern';
   const furniture=rooms.map(r=>({x:r.clue.x,y:r.clue.y-.20,t:'manorFurniture',kind:r.prop}));
   furniture.push(
-    {x:3.22,y:19.0,t:'manorFurniture',kind:'books'},{x:8.72,y:17.25,t:'manorFurniture',kind:'books'},
-    {x:25.70,y:19.0,t:'manorFurniture',kind:'settee'},{x:20.25,y:19.0,t:'manorFurniture',kind:'hearth'},
+    {x:3.22,y:19.0,t:'manorFurniture',kind:'books',a:0},{x:8.72,y:17.25,t:'manorFurniture',kind:'books'},
+    {x:25.40,y:19.0,t:'manorFurniture',kind:'settee',a:Math.PI},{x:20.25,y:19.0,t:'manorFurniture',kind:'hearth'},
     {x:3.8,y:4.38,t:'manorFurniture',kind:'range'},{x:25.7,y:4.25,t:'manorFurniture',kind:'planter'},
     {x:20.3,y:6.6,t:'manorFurniture',kind:'planter'},{x:12.12,y:17.1,t:'manorFurniture',kind:'portrait'},
     {x:16.89,y:10.5,t:'manorFurniture',kind:'portrait'},
     {x:33.76,y:5.22,t:'manorFurniture',kind:'planter'},
     {x:29.3,y:8.75,t:'manorFurniture',kind:'planter'},
     {x:38.15,y:22.54,t:'manorFurniture',kind:'linen'},
-    {x:42.75,y:22.33,t:'manorFurniture',kind:'linen'},
+    {x:42.62,y:22.33,t:'manorFurniture',kind:'linen',a:Math.PI},
     {x:36.77,y:8.5,t:'manorFurniture',kind:'dining'},
-    {x:37.15,y:30.71,t:'manorFurniture',kind:'books'},{x:41.79,y:29.7,t:'manorFurniture',kind:'books'},
+    {x:37.15,y:30.71,t:'manorFurniture',kind:'books',a:-Math.PI/2},{x:41.79,y:29.7,t:'manorFurniture',kind:'books',a:Math.PI},
     {x:35.18,y:26.22,t:'manorFurniture',kind:'portrait'},{x:40.78,y:28.61,t:'manorFurniture',kind:'desk'}
   );
-  return {rooms,tiles,lamps,furniture,study,potting,service,post,active:-1,pin:null,mapRevision:0,route:null};
+  const hearth=furniture.find(prop=>prop.kind==='hearth');
+  return {rooms,tiles,lamps,furniture,frames,hearth,study,potting,service,post,
+    swings:[study.swing,potting.swing,service.swing,post.swing],active:-1,pin:null,mapRevision:0,route:null};
 }
 function newGame(fl,bat=100,tries=0){
   saveExploredMaps();
@@ -556,6 +575,9 @@ function newGame(fl,bat=100,tries=0){
   setNurseryQuiet(false);mobiles=[];mobileTurn=0;annex=null;stair=null;
   rnd=coop?mulberry(coop.seed+fl*7919+tries*131):Math.random;
   floor=fl;
+  firstEscape=true;escapeGrace=0;
+  if(coop)coop.friendCatchWait=0;
+  floorEscapeRoute=(fl===2||fl===3)&&!endless?{mapRevision:0,active:false}:null;
   manor=fl===1&&!endless?buildManor():null;
   if(!manor)genMaze(4+2*fl);
   P=manor?{...MANOR_START}:{x:1.5,y:1.5,a:grid[1][2]?Math.PI/2:0};
@@ -634,6 +656,12 @@ function newGame(fl,bat=100,tries=0){
   lockers=place(fl===1?2:3,'locker');
   gems=place(2,'gem');
   pages=fl<=FLOORS?place(2,'page').map((p,i)=>({...p,idx:(fl-1)*2+i})):[];
+  if(manor){
+    for(const [x,y] of [[3.5,22.5],[25.5,22.5],[3.5,14.5],[25.5,14.5],[3.5,7.5],[19.5,7.5],[37.5,8.5],[37.5,22.5]]){
+      if(taken.some(point=>Math.hypot(x-point.x,y-point.y)<.95))continue;
+      lockers.push({x,y,t:'locker'});taken.push({x,y});
+    }
+  }else lockers.push(...place(3,'locker'));
   if(manor){
     annex={x:4,y:24,doorX:6,doorY:24,entered:false,
       lamp:{x:6.35,y:24.55,t:'annexLamp'},record:{x:5.3,y:25.78,t:'record',idx:0}};
@@ -746,14 +774,16 @@ function buildSprites(){
   if(cellarTrace)sprites.push(cellarTrace.note);
   if(manor){
     sprites.push(...manor.lamps,...manor.furniture,...manor.rooms.map(r=>r.clue));
+    sprites.push(...manor.frames.filter(frame=>!frame.door||frame.door.open));
     if(!manor.study.open)sprites.push(manor.study.shelf,...manor.study.books);
-    if(!manor.potting.open)sprites.push(manor.potting.door,...manor.potting.buttons);
+    if(!manor.potting.open)sprites.push(manor.potting.swing.panel,...manor.potting.buttons);
     const service=manor.service;
     sprites.push(service.bell,service.tube);
     if(service.stage<3)sprites.push(service.latch,service.parlor);
     const {post}=manor;
-    if(post.stage===0)sprites.push(post.door,...post.bells);
+    if(post.stage===0)sprites.push(post.swing.panel,...post.bells);
     if(post.stage<2)sprites.push(post.bolt,post.inner,post.outer);
+    for(const swing of manor.swings)if(swing.started!==undefined)sprites.push(swing);
   }
   if(stair){
     sprites.push(...stair.lamps);
@@ -995,7 +1025,7 @@ function netRecv(dt){
   });
   if(q.k&&keyS&&!keyS.got){keyS.got=true;hasKey=true;say(`${fname()} found the key.`)}
   if(q.g&&gate&&!gate.open){
-    grid[gate.cy][gate.cx]=0;gate.open=true;hasKey=false;DpTile=-1;noise(.9,300,2,.15,'bandpass');say(`${fname()} opened the gate.`);
+    openIronGate();noise(.9,300,2,.15,'bandpass');say(`${fname()} opened the gate.`);
     if(coop.role==='host'){releaseCrawlerSound();hear(gate.x,gate.y,12)}
   }
   // their stone
@@ -1151,7 +1181,7 @@ $('mapLandmarks').addEventListener('click',e=>{
   const button=e.target.closest('[data-map-place]');
   if(!button||!mapOpen||state!=='play')return;
   if(morning)toggleMorningPin(button.dataset.mapPlace);
-  else if(manor)toggleManorPin(Number(button.dataset.mapPlace));
+  else if(manor)toggleManorPin(button.dataset.mapPlace==='stairs'?'stairs':Number(button.dataset.mapPlace));
   if(button.closest('.mapIndex')){
     const marker=$('mapLandmarks').querySelector(`.mapNumber[data-map-place="${button.dataset.mapPlace}"]`);
     marker?.focus({preventScroll:true});
@@ -1169,11 +1199,19 @@ function say(t,sec=3){const m=$('msg');m.hidden=false;m.textContent=t;m.style.op
 // ---------- actions ----------
 function openManorDoor(door){
   door.open=true;
+  if(door.swing)door.swing.started=timeIn;
   grid[door.y][door.x]=0;
   manor.mapRevision++;
   petKey='';DpTile=-1;
   for(const source of [pet,...manor.lamps])source._vis=null;
   buildSprites();
+}
+function swingingManorPanel(swing){
+  const {panel,hinge,turn,started}=swing;
+  const progress=Math.max(0,Math.min(1,(timeIn-started)/.76));
+  const a=panel.a+turn*progress*progress*(3-2*progress);
+  return {...panel,a,x:panel.x+hinge*(Math.sin(a)-Math.sin(panel.a)),
+    y:panel.y+hinge*(Math.cos(panel.a)-Math.cos(a))};
 }
 function openPottingRoom(shared=false){
   const potting=manor.potting;
@@ -1350,7 +1388,7 @@ function actionHere(){
       readNurseryDrawer();
     }};
   }
-  const lk=lockers.find(l=>Math.hypot(l.x-P.x,l.y-P.y)<.85);
+  const lk=lockers.find(l=>Math.hypot(l.x-P.x,l.y-P.y)<.85&&los(P.x,P.y,l.x,l.y));
   if(lk)return {label:'HIDE',fn:()=>hideIn(lk)};
   if(gate&&!gate.open&&hasKey&&Math.hypot(gate.x-P.x,gate.y-P.y)<1.25)return {label:'UNLOCK',fn:unlock};
   if(papa&&papa.st==='chained'&&Math.hypot(papa.x-P.x,papa.y-P.y)<1.2){
@@ -1532,8 +1570,12 @@ function lockerSearch(dt,local,friend,isLit,localDistance,friendDistance){
   E.inspection=search;
   return search;
 }
-function unlock(){
+function openIronGate(){
   grid[gate.cy][gate.cx]=0;gate.open=true;hasKey=false;DpTile=-1;
+  if(floorEscapeRoute)floorEscapeRoute.mapRevision++;
+}
+function unlock(){
+  openIronGate();
   if(coop?.role!=='guest')releaseCrawlerSound();
   const t=A.currentTime;tone(300,.15,.2,'square',t,200);noise(.9,300,2,.25,'bandpass',t+.15);
   say('The gate grinds open. It heard that.');
@@ -1577,6 +1619,7 @@ function queueManorMapSave(){
 function markSeen(cell){
   if(seen[cell]!==0)return;
   seen[cell]=1;
+  if(floorEscapeRoute)floorEscapeRoute.mapRevision++;
   if(manor){manor.mapRevision++;queueManorMapSave()}
   if(morning){
     morning.mapRevision++;
@@ -1617,9 +1660,33 @@ function exploredMapRoute(scene,key,isDestination,frontierDistance){
 function manorMapRoute(room){
   return exploredMapRoute(manor,room.idx,cell=>manor.tiles[cell]===room.idx+1);
 }
+function manorStairsReady(){
+  return !!manor&&sigils.length>0&&sigils.every(sigil=>sigil.got);
+}
+function manorStairsRoute(){
+  const x=exitS.x|0,y=exitS.y|0;
+  return exploredMapRoute(manor,'stairs',cell=>cell===x+y*S,(cx,cy)=>Math.abs(cx-x)+Math.abs(cy-y));
+}
 function morningMapRoute(pin){
   const [x,y]=pin.approach;
   return exploredMapRoute(morning,pin.place,cell=>cell===x+y*S,(cx,cy)=>Math.abs(cx-x)+Math.abs(cy-y));
+}
+function floorEscapeDestination(){
+  if(!floorEscapeRoute||!sigils.length||!sigils.every(sigil=>sigil.got))return null;
+  const exitCell=(exitS.x|0)+(exitS.y|0)*S;
+  const startCell=(P.x|0)+(P.y|0)*S;
+  if(gate&&!gate.open&&(regionA[exitCell]>=0)!==(regionA[startCell]>=0)){
+    if(hasKey)return {key:'gate',name:'Iron gate',point:gate,adjacent:true};
+    if(keyS&&!keyS.got)return {key:'key',name:'Rusty key',point:keyS};
+    if(coop)return {key:'gate',name:'Iron gate',point:gate,adjacent:true,friendKey:true};
+  }
+  return {key:'exit',name:floor===2?'Cellar exit':'Third-floor exit',point:exitS};
+}
+function floorEscapeMapRoute(destination){
+  const x=destination.point.x|0,y=destination.point.y|0;
+  const distance=(cx,cy)=>Math.abs(cx-x)+Math.abs(cy-y);
+  return exploredMapRoute(floorEscapeRoute,destination.key,
+    cell=>distance(cell%S,cell/S|0)===(destination.adjacent?1:0),distance);
 }
 function nextRouteDirection(route){
   if(!route?.steps.length)return '';
@@ -1666,7 +1733,9 @@ function drawMap(){
     else if(v===1){g.fillStyle=hash(x,y,5)<.5?'#4a3f30':'#564a38';g.fillRect(x*cs+.5,y*cs+.5,cs-1,cs-1)}
     else{g.fillStyle='#f1e8ca';g.fillRect(x*cs,y*cs,cs,cs);g.strokeStyle='#5a3a26';g.lineWidth=Math.max(1,cs/8);for(let b=1;b<4;b++){g.beginPath();g.moveTo(x*cs+b*cs/4,y*cs);g.lineTo(x*cs+b*cs/4,y*cs+cs);g.stroke()}}
   }
-  const route=pin?manorMapRoute(pin):morning?.pin?morningMapRoute(morning.pin):null;
+  const escape=floorEscapeRoute?.active?floorEscapeDestination():null;
+  const route=pin?manorMapRoute(pin):manor?.pin==='stairs'?manorStairsRoute():
+    morning?.pin?morningMapRoute(morning.pin):escape?floorEscapeMapRoute(escape):null;
   if(route?.steps.length){
       const [sx,sy]=at(P.x-.5,P.y-.5);
       g.beginPath();g.moveTo(sx,sy);
@@ -1683,6 +1752,10 @@ function drawMap(){
     if(sg.got){g.beginPath();g.moveTo(x-cs*.25,y-cs*.25);g.lineTo(x+cs*.25,y+cs*.25);g.moveTo(x+cs*.25,y-cs*.25);g.lineTo(x-cs*.25,y+cs*.25);g.stroke()}
     else{g.beginPath();g.arc(x,y,cs*.28,0,7);g.fill()}}
   if(keyS&&!keyS.got&&vis(keyS)){const [x,y]=at(keyS.x-.5,keyS.y-.5);g.fillStyle='#c09020';g.beginPath();g.arc(x,y,cs*.22,0,7);g.fill()}
+  for(const spot of lockers)if(vis(spot)){
+    const [x,y]=at(spot.x-.5,spot.y-.5),r=Math.max(1.5,cs*.21);
+    g.strokeStyle='#4e695e';g.lineWidth=1.4;g.strokeRect(x-r,y-r*1.25,r*2,r*2.5);
+  }
   if(manor){
     if(pin?.visited){
       const [x0,y0,x1,y1]=pin.bounds;
@@ -1755,6 +1828,7 @@ function drawMapLandmarks(map,x0,y0,columns,rows){
       return {place:idx,name,point:{x:(left+right+1)/2,y:top+.8}};
     });
   const selected=morning?morning.pin?.place:manor.pin;
+  if(manorStairsReady())discovered.push({place:'stairs',name:'Cellar stairs',point:exitS});
   const compact=!!manor&&discovered.length>=(rect.width<500?7:11);
   const signature=JSON.stringify([rect.left,rect.top,rect.width,rect.height,x0,y0,columns,rows,
     selected,compact,discovered.map(({place})=>place)]);
@@ -2344,11 +2418,28 @@ function moveCreatureAway(kind){
   if(kind==='D')dollAway();
 }
 function catchFriend(kind){
+  if(coop.friendCatchWait>0)return;
+  coop.friendCatchWait=3.4;
   coop.cg=(coop.cg||0)+1;coop.ct=kind;coop.cf=floor;
-  moveCreatureAway(kind);netSendNow();say(`${CATCH_NAMES[kind]} caught ${fname()}!`,3);
+  moveCreatureAway(kind);netSendNow();
+}
+function slipAway(kind){
+  firstEscape=false;escapeGrace=3.2;caughtRun=true;
+  if(hidden){hidden=null;light.on=lightWas&&light.bat>0}
+  if(coop?.role!=='guest')moveCreatureAway(kind);
+  if(kind==='E'&&coop?.role!=='guest')Object.assign(E,{chase:false,bend:false,windup:0,mv:0,inspection:null,stun:3.2});
+  noise(.34,220,2,.26,'lowpass');
+  if(kind==='C')clicks(-.35,.24);
+  if(kind==='D')tone(466,.34,.09,'triangle',A.currentTime,279);
+  say('You slipped away. Run or find a hiding spot.',3.2);
+  netSendNow();
 }
 function caught(kind){
   if(state!=='play')return;
+  if(kind!=='F'){
+    if(escapeGrace>0)return;
+    if(firstEscape){slipAway(kind);return}
+  }
   saveManorMap();
   if(coop?.role==='host')moveCreatureAway(kind);
   if(!coop){finale=null;clearBlackout()}
@@ -2610,6 +2701,7 @@ function netSendNow(){if(coop){coop.sent=0;netSend()}}
 function startMorning(atBlueHouse=false,atOrchard=false){
   if(!save.dawnUnlocked)return;
   saveExploredMaps();
+  floorEscapeRoute=null;
   leaveCoop();audioInit();A.resume();music.pause();mboxStop(false);stopFollower();clearBlackout();setNurseryQuiet(false);ambTo(0,.4);
   const mara={x:8.6,y:9.5,t:'mara',moving:false};
   const house={x:1.12,y:9.5,t:'morningDoor'};
@@ -3305,6 +3397,8 @@ function leaveMorning(){
 // ---------- update ----------
 function update(dt){
   timeIn+=dt;if(!morning)totalT+=dt;
+  escapeGrace=Math.max(0,escapeGrace-dt);
+  if(coop)coop.friendCatchWait=Math.max(0,(coop.friendCatchWait||0)-dt);
   if(coop){netRecv(dt);if(state!=='play')return}
   // move player
   let f=0,s=0,turn=0;
@@ -3430,6 +3524,13 @@ function update(dt){
   for(const pg of pages)if(!pg.got&&Math.hypot(pg.x-P.x,pg.y-P.y)<.5){readPage(pg);return}
   if(gate&&!gate.open&&!hasKey&&Math.hypot(gate.x-P.x,gate.y-P.y)<1.3&&msgT<=0)say('A locked gate. The key is somewhere on this floor.');
   const allGot=sigils.every(x=>x.got);
+  if(floorEscapeRoute&&allGot&&!floorEscapeRoute.announced){
+    floorEscapeRoute.announced=true;floorEscapeRoute.active=true;
+  }
+  if(manor&&allGot&&!manor.stairsAnnounced){
+    manor.stairsAnnounced=true;
+    if(manor.pin===null||sigils.some(sigil=>sigil.room===manor.pin))manor.pin='stairs';
+  }
 
   // Wisp floats a little ahead along the path to the next thing you need
   const left=sigils.filter(x=>!x.got).sort((a,b)=>Math.hypot(a.x-P.x,a.y-P.y)-Math.hypot(b.x-P.x,b.y-P.y));
@@ -3555,7 +3656,7 @@ function update(dt){
       if(dl>1e-4){const m=Math.min(espd,dl);E.x+=dx/dl*m;E.y+=dy/dl*m;E.mv=1}else E.mv=0
     }
     if(fs&&!fs.h&&Math.hypot(E.x-fs.x,E.y-fs.y)<.5)catchFriend('E');
-    if(Math.hypot(E.x-P.x,E.y-P.y)<.5&&!meSafe){caught('E');return}
+    if(escapeGrace<=0&&Math.hypot(E.x-P.x,E.y-P.y)<.5&&!meSafe){caught('E');return}
   }
   if(hidden){
     const remote=coop?.role==='guest'?coop.fp?.lk:null;
@@ -3588,14 +3689,14 @@ function update(dt){
         if(crawlerFloor())armCrawlerDrop();
         else if(C.hunt||nightmare||endless){
           if(f2&&!f2.h&&Math.hypot(C.x-f2.x,C.y-f2.y)<.5)catchFriend('C');
-          if(!hidden&&Math.hypot(C.x-P.x,C.y-P.y)<.5){caught('C');return}
+          if(escapeGrace<=0&&!hidden&&Math.hypot(C.x-P.x,C.y-P.y)<.5){caught('C');return}
         }
       }
     }
     crawlerCeilingCue(dt,soundField);
   }
 
-  if(Dl){dollStep(dt,Dp,soundField);if((!coop||coop.role==='host')&&!hidden&&Math.hypot(Dl.x-P.x,Dl.y-P.y)<.5){caught('D');return}}
+  if(Dl){dollStep(dt,Dp,soundField);if(escapeGrace<=0&&(!coop||coop.role==='host')&&!hidden&&Math.hypot(Dl.x-P.x,Dl.y-P.y)<.5){caught('D');return}}
 
   // sudden "it's right there" sting
   const seen=onScreen(E,.55)&&ed<4&&los(P.x,P.y,E.x,E.y);
@@ -3738,6 +3839,81 @@ const TEX={"w0a":"data:image/webp;base64,UklGRtITAABXRUJQVlA4IMYTAADQQgCdASqAAIA
 })();
 const wallTex=(mx,my,side)=>{const W8=theme().walls,h=hash(mx,my,side?7:3);return W8[h<.6?0:h<.78?1:h<.85?2:h<.9?3:h<.94?4:h<.965?5:h<.985?6:7]};
 
+// Bake the manor's material detail once. The renderer only samples these textures.
+const MANOR_TEXTURE_SIZE=256;
+function bakeManorTexture(sample){
+  const n=MANOR_TEXTURE_SIZE,data=new Uint8Array(n*n*3);
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const i=(x+y*n)*3;
+    data.set(sample((x+.5)/n,(y+.5)/n,x,y),i);
+  }
+  return data;
+}
+function manorWood(u,v,x,y,seed=0){
+  const broad=Math.sin(u*103+3.4*Math.sin(v*4.6+seed)+1.9*Math.sin(v*9.6+u*6));
+  const grain=Math.sin(u*447+3*broad+Math.sin(v*17+seed)*1.9);
+  return .91+.08*broad+.038*grain+.055*(hash(x,y,seed)-.5);
+}
+const MANOR_TIMBER=bakeManorTexture((u,v,x,y)=>{
+  const plank=u*5,seam=plank%1,board=plank|0,join=(v+hash(board,8,2))%1;
+  const gap=seam<.026||join<.013,edge=seam>.965||join>.985;
+  const k=manorWood(u,v,x,y,board)*(.79+.27*hash(board,6,9))*(gap?.44:edge?1.22:1);
+  return [132*k,92*k,59*k];
+});
+const MANOR_CEILING=bakeManorTexture((u,v,x,y)=>{
+  const beam=u<.077||u>.923;
+  const seam=(v*6)%1;
+  const k=manorWood(v,u,y,x,6)*(beam?.57:seam<.06?.65:1);
+  return [103*k,79*k,60*k];
+});
+const MANOR_CARPET=bakeManorTexture((u,v,x,y)=>{
+  const a=(u*2)%1-.5,b=(v*2)%1-.5;
+  const leaf=Math.abs(a)+Math.abs(b)*1.3;
+  const stem=Math.abs(Math.sin((a+b)*14))<.16&&leaf<.49;
+  const petal=Math.abs(leaf-.34)<.051||Math.hypot(a,b)<.086;
+  const thread=.86+.13*hash(x,y,5)+((x+y)%2)*.036;
+  const color=petal?[121,87,59]:stem?[94,83,62]:[82,48,44];
+  return color.map(channel=>channel*thread);
+});
+const MANOR_TILE=bakeManorTexture((u,v,x,y)=>{
+  const col=u*3,row=v*3,edge=Math.min(col%1,row%1,1-col%1,1-row%1);
+  const k=(edge<.038?.55:edge<.071?.83:1)*(.84+.14*hash(col|0,row|0,24)+.05*hash(x,y,10));
+  const light=((col|0)+(row|0))%2===0;
+  return (light?[136,132,113]:[89,105,100]).map(channel=>channel*k);
+});
+function bakeManorWall(color,service=false){
+  return bakeManorTexture((u,v,x,y)=>{
+    const damp=.89+.07*Math.sin(u*10+v*6)+.05*hash(x,y,9);
+    if(v<.61&&v>.046){
+      const dx=(u*2)%1-.5,dy=(v*4)%1-.5;
+      const floral=Math.abs(dx)+Math.abs(dy)*.82;
+      const leaf=Math.abs(Math.sin((dx-dy)*11))<.20&&floral<.28;
+      const motif=service?((u*12)%1<.23?1.07:.94):floral<.073?1.40:leaf||Math.abs(floral-.28)<.036?1.17:1;
+      return color.map(channel=>channel*damp*motif);
+    }
+    const panel=(u*2)%1,edge=Math.min(panel,1-panel);
+    const trim=v<.046||v>.597&&v<.664||v>.951;
+    const bevel=edge<.08||v<.716||v>.918;
+    const k=manorWood(u,v,x,y,4)*(trim?1.34:bevel?1.05:.72);
+    return [102*k,67*k,42*k];
+  });
+}
+const MANOR_WALLS=MANOR_CLUES.map(room=>bakeManorWall(room.color,room.prop==='range'||room.prop==='pipe'));
+const MANOR_HALL_WALL=bakeManorWall([119,84,61]);
+const GLASSHOUSE_WINDOW=bakeManorTexture((u,v,x,y)=>{
+  const light=.82+.18*hash(x,y,22);
+  const mullion=Math.abs(u-.5)<.026||u<.045||u>.955||Math.abs(v-.34)<.025||v<.035||v>.63;
+  if(mullion)return [82*light,80*light,66*light];
+  const crack=Math.abs(u-.27-(v-.13)*.66)<.006&&v>.13&&v<.53;
+  const condensation=hash(x>>1,y>>3,7)>.89;
+  const k=light*(crack?1.48:condensation?1.18:1);
+  return [55*k,79*k,81*k];
+});
+function manorTextureOffset(u,v){
+  const mask=MANOR_TEXTURE_SIZE-1;
+  return (((v*MANOR_TEXTURE_SIZE|0)&mask)*MANOR_TEXTURE_SIZE+((u*MANOR_TEXTURE_SIZE|0)&mask))*3;
+}
+
 // ---------- lights: Wisp, sigils, gems, the open door and a friend's lantern glow on walls and floor ----------
 let LT=[];
 function gatherLights(t){
@@ -3755,7 +3931,13 @@ function gatherLights(t){
   }
   if(cellarTrace)add(cellarTrace.note,.65,.74,1,.22);
   if(manor)for(const lamp of manor.lamps)if(Math.hypot(P.x-lamp.x,P.y-lamp.y)<9){
-    add(lamp,1,lamp.glow?.startsWith('173')?.82:.62,lamp.glow?.startsWith('173')?.72:.33,.38);
+    const cool=lamp.glow?.startsWith('173'),flicker=manorLanternFlicker(lamp,t);
+    add(lamp,1,cool?.84:.68,cool?.79:.43,.53*flicker);
+  }
+  if(manor){
+    const hearth=manor.hearth;
+    if(hearth&&Math.hypot(P.x-hearth.x,P.y-hearth.y)<8)
+      add(hearth,1,.44,.18,.32+.075*Math.sin(t*6.3)+.04*Math.sin(t*15.1));
   }
   if(stair){
     for(const lamp of stair.lamps)add(lamp,1,.55,.22,lamp.turned?.18:.035);
@@ -4052,10 +4234,11 @@ function drawLamplighterShadow(hz){
 function actorMesh(mesh,point,material,frame){
   const atlas=ART.actor,patch=material[4],textured=patch!==undefined&&atlas.d;
   const tile=atlas.w/4;
-  const texture=textured?{data:atlas.d,stride:atlas.w,x:(patch%4)*tile,y:(patch>>2)*tile,last:tile-1,mix:0}:null;
+  const texture=material.texture?{...material.texture,mix:0}:
+    textured?{data:atlas.d,stride:atlas.w,x:(patch%4)*tile,y:(patch>>2)*tile,last:tile-1,mix:0}:null;
   const points=mesh.points.map(p=>{
     const v=point(p);
-    v.push(.5+p[0]*.5,.5-p[2]*.5,1);
+    v.push(.5+p[0]*.5,.5-p[material.topTexture?1:2]*.5,1);
     return v;
   });
   const illuminate=([x,y,z])=>{
@@ -4129,6 +4312,287 @@ const DOLL_LACE=actorPaint([156,145,115],14,.45);
 const DOLL_GLOVE=actorPaint([164,150,132],26,.42),DOLL_CRACK=[48,37,38],DOLL_IRON=[78,67,62];
 const DOLL_PORCELAIN=actorPaint([151,145,138],12,.84,true);
 const DOLL_WOOD=actorPaint([64,43,32],24,.96,true);
+const MANOR_FURNITURE_3D=new Set(['books','desk','dining','piano','settee','planter','linen','pipe','bellBoard','hearth','range','rabbitDoor','postDoor']);
+const furnitureMaterial=(rgb,texture,front=false)=>Object.assign([...rgb,.15,undefined,.88,front],{texture});
+function furnitureTexture(sample){
+  const n=128,data=new Uint8Array(n*n*4);
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const color=sample((x+.5)/n,(y+.5)/n,x,y),i=(x+y*n)*4;
+    data[i]=color&255;data[i+1]=(color>>>8)&255;data[i+2]=(color>>>16)&255;data[i+3]=255;
+  }
+  return {data,stride:n,x:0,y:0,last:n-1};
+}
+const FURNITURE_WALNUT=furnitureMaterial([105,70,45],furnitureTexture((u,v,x,y)=>{
+  const grain=manorWood(u,v,x,y,3);
+  return px32(128*grain|0,84*grain|0,53*grain|0);
+}));
+const FURNITURE_BOOKS=furnitureMaterial([62,44,35],
+  furnitureTexture((u,v)=>shadeManorFurniture('books',u,v,.61)),true);
+const FURNITURE_TRIM=[143,99,61,.16],FURNITURE_DARK=[72,43,29,.12],FURNITURE_BRASS=[169,125,67,.20];
+const PIANO_CASE=furnitureMaterial([54,43,38],furnitureTexture((u,v,x,y)=>{
+  const grain=manorWood(u,v,x,y,9),edge=Math.min(u,1-u,v,1-v);
+  const k=grain*(edge<.04?1.27:edge<.09?.66:1);
+  return px32(74*k|0,51*k|0,42*k|0);
+}));
+const PIANO_KEYS=furnitureMaterial([180,163,131],furnitureTexture((u,v,x,y)=>{
+  const pos=u*22,key=pos|0,edge=pos%1;
+  const black=v<.57&&[0,1,3,4,5].includes(key%7)&&edge>.72;
+  const k=.88+.12*hash(x,y,42);
+  if(black||edge<.072)return px32(39*k|0,33*k|0,32*k|0);
+  return px32(203*k|0,185*k|0,150*k|0);
+}));
+PIANO_KEYS.topTexture=true;
+const SETTEE_VELVET=furnitureMaterial([109,48,52],furnitureTexture((u,v,x,y)=>{
+  const row=v*4,fold=Math.abs((u*6+(row|0)*.5)%1-.5)+Math.abs(row%1-.5);
+  const seam=Math.abs(fold-.49)<.022;
+  const button=fold<.085;
+  const k=(.83+.16*hash(x,y,51))*(button?.63:seam?.78:1);
+  return px32(131*k|0,61*k|0,67*k|0);
+}));
+const SETTEE_EDGE=[131,81,61,.15];
+const SETTEE_CUSHION=ringMesh([[-1,0],[-.96,.80],[-.70,.97],[.65,1],[.94,.83],[1,0]],12);
+const PLANTER_POT=ringMesh([[-1,0],[-1,.68],[-.82,.70],[.59,.95],[.72,1],[.94,1],[1,.91],[.83,.84],[.71,0]],14);
+const PLANTER_LEAF=ringMesh([[-1,0],[-.68,.55],[-.25,.92],[.14,1],[.54,.72],[1,0]],6,
+  (angle,z,r)=>[Math.cos(angle)*r,Math.sin(angle)*r+.26*z*z,z]);
+const PLANTER_CLAY=furnitureMaterial([139,77,53],furnitureTexture((u,v,x,y)=>{
+  const ring=(v*18)%1,patina=.81+.17*hash(x,y,32)+.09*Math.sin(u*37+v*18);
+  const k=patina*(ring<.12?.84:1);
+  return px32(163*k|0,91*k|0,60*k|0);
+}));
+const PLANTER_GREEN=furnitureMaterial([83,108,58],furnitureTexture((u,v,x,y)=>{
+  const midrib=Math.abs(u-.5)<.025,vein=Math.abs((v*9+Math.abs(u-.5)*3)%1-.5)<.047;
+  const k=(midrib?1.36:vein?1.12:.79+.29*Math.sin(u*Math.PI))*(.88+.12*hash(x,y,55));
+  return px32(84*k|0,111*k|0,58*k|0);
+}));
+const PLANTER_STEM=[89,99,58,.13],PLANTER_SOIL=[51,39,29,.12];
+const SERVICE_OAK=furnitureMaterial([105,78,58],furnitureTexture((u,v,x,y)=>{
+  const grain=manorWood(u,v,x,y,14),scuff=hash(x>>2,y>>2,11)>.88?.86:1;
+  const k=grain*scuff;
+  return px32(120*k|0,91*k|0,66*k|0);
+}));
+const SERVICE_COPPER=furnitureMaterial([118,83,56],furnitureTexture((u,v,x,y)=>{
+  const oxide=hash(x>>2,y>>2,31),k=.84+.15*hash(x,y,19);
+  if(oxide>.87)return px32(67*k|0,86*k|0,75*k|0);
+  return px32(139*k|0,94*k|0,64*k|0);
+}));
+const SERVICE_MOUTH=ringMesh([[-1,.32],[-.48,.44],[.58,.84],[.87,1],[1,.95],[.92,.74],[.63,.64],[-.66,.22],[-.72,0]],14);
+const SERVICE_BELL=ringMesh([[-1,0],[-1,1],[-.69,.85],[.29,.50],[.76,.40],[1,.14],[1,0]],10);
+const SERVICE_IRON=[56,54,49,.14],SERVICE_LABEL=[163,139,95,.19];
+const HEARTH_STONE=furnitureMaterial([106,87,72],furnitureTexture((u,v,x,y)=>{
+  const row=v*6,col=u*5+((row|0)%2)*.5;
+  const edge=Math.min(row%1,col%1,1-row%1,1-col%1);
+  const k=(edge<.049?.53:.80+.20*hash(col|0,row|0,6))*(.83+.17*hash(x,y,4));
+  return px32(143*k|0,124*k|0,105*k|0);
+}));
+const RANGE_IRON=furnitureMaterial([65,68,65],furnitureTexture((u,v,x,y)=>{
+  const rim=Math.min(u,1-u,v,1-v)<.06,grain=.79+.21*hash(x,y,19);
+  const k=grain*(rim?1.28:1);
+  return px32(78*k|0,83*k|0,78*k|0);
+}));
+const HEARTH_SOOT=[27,23,22,.24],HEARTH_COAL=[62,39,29,.18],RANGE_HANDLE=[148,111,67,.18];
+const LANTERN_BASE=ringMesh([[-1,0],[-1,.79],[-.48,1],[.31,1],[.88,.84],[1,.74],[1,0]],8);
+const LANTERN_CROWN=ringMesh([[-1,0],[-1,1],[-.57,.92],[.47,.61],[.85,.42],[1,.27],[1,0]],8);
+const LANTERN_FLAME=ringMesh([[-1,0],[-.72,.72],[-.29,1],[.24,.68],[.69,.29],[1,0]],8,
+  (angle,z,r)=>[Math.cos(angle)*r+.24*z*z,Math.sin(angle)*r,z]);
+const LANTERN_BRASS=furnitureMaterial([144,99,53],furnitureTexture((u,v,x,y)=>{
+  const patina=.75+.16*hash(x>>2,y>>2,18)+.08*hash(x,y,33);
+  const band=v<.12||v>.85?1.27:1;
+  return px32(167*patina*band|0,113*patina*band|0,59*patina*band|0);
+}));
+LANTERN_BRASS[3]=.60;
+const LANTERN_EDGE=[110,71,39,.40],LANTERN_WAX=[192,151,106,.66];
+function manorLanternFlicker(lamp,t){
+  return .92+.055*Math.sin(t*4.9+lamp.x)+.025*Math.sin(t*11.2+lamp.y);
+}
+function manorLanternMesh(lamp,t,form,limb){
+  const flicker=manorLanternFlicker(lamp,t),sway=Math.sin(t*9+lamp.y)*.005;
+  form(LANTERN_BASE,0,0,.557,.111,.111,.036,LANTERN_BRASS);
+  form(LANTERN_BASE,0,0,.592,.099,.099,.013,LANTERN_EDGE);
+  form(LANTERN_CROWN,0,0,.786,.114,.114,.049,LANTERN_BRASS);
+  form(LANTERN_BASE,0,0,.749,.116,.116,.009,LANTERN_EDGE);
+  for(const x of [-.069,.069])for(const y of [-.069,.069]){
+    limb([x,y,.579],[x*.89,y*.89,.759],.009,LANTERN_EDGE);
+    form(ACTOR_ROUND,x,y,.604,.013,.013,.015,LANTERN_BRASS);
+  }
+  form(ACTOR_LIMB,0,0,.624,.026,.026,.036,LANTERN_WAX);
+  form(LANTERN_FLAME,sway,0,.686,.025*flicker,.023,.045*flicker,[247,139,47,1],sway*23);
+  form(LANTERN_FLAME,sway,0,.675,.012,.012,.028,[255,221,132,1]);
+  limb([0,0,.824],[0,0,1],.008,LANTERN_EDGE);
+  for(let z=.852;z<.99;z+=.034)form(ACTOR_ROUND,0,0,z,.018,.011,.022,LANTERN_BRASS,0,z*95);
+}
+const RANGE_PLATE=ringMesh([[-1,0],[-1,.95],[-.66,1],[.55,1],[1,.93],[1,0]],12);
+function manorFurnitureMesh(o,form,t){
+  const box=(x,y,z,w,d,h,material)=>form(ACTOR_BRICK,x,y,z,w*Math.SQRT2,d*Math.SQRT2,h,material);
+  if(o.kind==='rabbitDoor'||o.kind==='postDoor'){
+    const rabbit=o.kind==='rabbitDoor';
+    box(0,0,.475,.45,.063,.466,FURNITURE_WALNUT);
+    for(const side of [-1,1]){
+      box(side*.395,.067,.483,.035,.017,.428,FURNITURE_DARK);
+      for(const z of [.14,.80])box(side*.294,.078,z,.121,.012,.026,SERVICE_IRON);
+    }
+    for(const z of [.13,.82])box(0,.065,z,.373,.024,.032,FURNITURE_TRIM);
+    if(rabbit){
+      form(ACTOR_ROUND,0,.082,.594,.118,.015,.072,FURNITURE_TRIM);
+      for(const side of [-1,1])form(ACTOR_ROUND,side*.052,.085,.699,.029,.014,.087,FURNITURE_TRIM,side*.13);
+      form(ACTOR_ROUND,-.042,.099,.605,.015,.009,.013,FURNITURE_DARK);
+    }
+    form(ACTOR_ROUND,.295,.104,.456,.025,.021,.029,FURNITURE_BRASS);
+    return;
+  }
+  if(o.t==='manorFrame'){
+    const span=o.width*.5,service=o.style==='service',secret=o.style==='secret';
+    const timber=service?SERVICE_OAK:FURNITURE_WALNUT;
+    for(const side of [-1,1]){
+      const x=side*(span-.045);
+      box(x,0,.451,.046,.112,.453,timber);
+      box(x,0,.07,.066,.121,.07,FURNITURE_DARK);
+      box(x,0,.803,.059,.121,.029,FURNITURE_TRIM);
+      if(!service)box(x-side*.031,0,.49,.013,.123,.304,FURNITURE_DARK);
+    }
+    box(0,0,.943,span,.118,.058,timber);
+    box(0,0,.887,span-.024,.122,.017,FURNITURE_DARK);
+    if(!service)for(const side of [-1,1]){
+      box(side*(span-.105),0,.865,.072,.115,.026,timber);
+      box(side*(span-.145),0,.894,.080,.115,.026,timber);
+    }
+    if(secret)box(0,0,.962,.096,.13,.026,FURNITURE_BRASS);
+    return;
+  }
+  if(o.kind==='hearth'){
+    box(0,-.19,.43,.66,.075,.40,HEARTH_SOOT);
+    for(const side of [-1,1])box(side*.505,.015,.379,.151,.23,.365,HEARTH_STONE);
+    box(0,0,.752,.66,.233,.105,HEARTH_STONE);
+    box(0,.038,.876,.739,.273,.035,FURNITURE_WALNUT);
+    box(0,.093,.053,.72,.33,.048,HEARTH_STONE);
+    box(0,.023,.121,.37,.157,.027,HEARTH_COAL);
+    for(const x of [-.27,-.14,0,.14,.27])box(x,.206,.160,.014,.018,.064,SERVICE_IRON);
+    for(let i=0;i<5;i++){
+      const x=(i-2)*.105,heat=.5+.5*Math.sin(t*(5+i*.6)+i*2.37);
+      const ember=[151+70*heat,53+49*heat,19+14*heat,.67];
+      form(ACTOR_ROUND,x,.035+(i%2)*.077,.147,.070,.057,.028,ember);
+      form(ACTOR_ROUND,x,.052,.171+.029*heat,.025,.023,.023+.035*heat,ember);
+    }
+    return;
+  }
+  if(o.kind==='range'){
+    box(0,0,.30,.55,.31,.24,RANGE_IRON);
+    box(0,0,.549,.59,.345,.029,SERVICE_IRON);
+    for(const x of [-.42,.42])for(const y of [-.21,.21])box(x,y,.049,.048,.041,.046,SERVICE_IRON);
+    for(const [x,w] of [[-.264,.204],[.255,.22]]){
+      box(x,.322,.304,w,.022,.168,HEARTH_SOOT);
+      box(x,.343,.305,w-.038,.015,.134,RANGE_IRON);
+      box(x,.367,.363,.077,.017,.013,RANGE_HANDLE);
+    }
+    for(const x of [-.32,.27])form(RANGE_PLATE,x,.035,.581,.158,.142,.014,RANGE_IRON);
+    form(ACTOR_LIMB,.35,-.225,.759,.077,.077,.186,RANGE_IRON);
+    form(ACTOR_LIMB,.35,-.225,.853,.087,.087,.022,SERVICE_IRON);
+    form(ACTOR_ROUND,-.31,.062,.659,.102,.088,.073,SERVICE_COPPER);
+    form(ACTOR_LIMB,-.31,.062,.722,.041,.041,.015,SERVICE_IRON);
+    return;
+  }
+  if(o.kind==='linen'){
+    const depth=o.shallow?.078:.205;
+    box(0,-.023,.476,.59,depth,.46,SERVICE_OAK);
+    box(0,0,.925,.628,depth+.023,.035,FURNITURE_TRIM);
+    box(0,0,.062,.611,depth+.014,.043,FURNITURE_DARK);
+    for(const side of [-1,1]){
+      const x=side*.279;
+      box(x,depth,.482,.265,.025,.398,SERVICE_OAK);
+      for(const z of [.276,.678]){
+        box(x,depth+.023,z,.215,.018,.141,FURNITURE_DARK);
+        box(x,depth+.039,z,.183,.013,.117,SERVICE_OAK);
+      }
+      form(ACTOR_ROUND,side*.074,depth+.073,.465,.018,.017,.024,FURNITURE_BRASS);
+    }
+    return;
+  }
+  if(o.kind==='pipe'){
+    box(0,-.075,.44,.16,.035,.412,SERVICE_OAK);
+    form(ACTOR_LIMB,0,0,.354,.047,.047,.324,SERVICE_COPPER);
+    for(const z of [.17,.41,.59])form(ACTOR_LIMB,0,0,z,.059,.058,.025,SERVICE_IRON);
+    form(SERVICE_MOUTH,0,.093,.663,.102,.102,.132,SERVICE_COPPER,0,0,Math.PI/2);
+    return;
+  }
+  if(o.kind==='bellBoard'){
+    box(0,-.028,.574,.56,.045,.253,SERVICE_OAK);
+    for(const x of [-.35,0,.35]){
+      box(x,.029,.713,.093,.012,.032,SERVICE_LABEL);
+      form(SERVICE_BELL,x,.105,.544,.083,.073,.097,FURNITURE_BRASS);
+      form(ACTOR_ROUND,x,.106,.442,.021,.021,.022,SERVICE_IRON);
+      box(x,.088,.307,.010,.012,.119,SERVICE_IRON);
+    }
+    box(0,0,.824,.584,.063,.024,FURNITURE_TRIM);
+    box(0,0,.333,.581,.062,.024,FURNITURE_DARK);
+    return;
+  }
+  if(o.kind==='piano'){
+    box(0,-.20,.58,.82,.21,.40,PIANO_CASE);
+    box(0,-.18,.975,.86,.245,.020,FURNITURE_DARK);
+    box(0,.20,.496,.76,.155,.031,PIANO_KEYS);
+    box(0,.349,.464,.80,.026,.031,FURNITURE_TRIM);
+    box(0,.043,.735,.69,.019,.153,PIANO_CASE);
+    box(0,.075,.791,.25,.035,.12,FURNITURE_DARK);
+    for(const side of [-1,1]){
+      box(side*.754,.283,.254,.049,.051,.230,PIANO_CASE);
+      box(side*.802,.18,.522,.064,.181,.058,FURNITURE_DARK);
+    }
+    for(const x of [-.097,0,.097])box(x,.091,.063,.024,.07,.015,FURNITURE_BRASS);
+    return;
+  }
+  if(o.kind==='settee'){
+    box(0,0,.193,.82,.34,.078,FURNITURE_DARK);
+    for(const x of [-.66,.66])for(const y of [-.25,.25]){
+      form(ACTOR_ROUND,x,y,.073,.048,.05,.075,FURNITURE_WALNUT);
+    }
+    for(const x of [-.33,.33]){
+      form(SETTEE_CUSHION,x,.065,.307,.36,.27,.104,SETTEE_VELVET,0,0,.06);
+      form(SETTEE_CUSHION,x,-.239,.541,.37,.093,.257,SETTEE_VELVET,0,0,.13);
+    }
+    for(const x of [-.75,.75]){
+      form(ACTOR_COAT,x,.045,.422,.116,.337,.122,SETTEE_VELVET);
+      form(ACTOR_ROUND,x,.317,.437,.090,.056,.076,SETTEE_EDGE);
+    }
+    box(0,-.264,.728,.75,.045,.048,FURNITURE_DARK);
+    return;
+  }
+  if(o.kind==='planter'){
+    const seed=o.x*17|0,scale=.84+hash(seed,o.y|0,11)*.25;
+    form(PLANTER_POT,0,0,.205,.31*scale,.29*scale,.202,PLANTER_CLAY);
+    form(ACTOR_BRICK,0,0,.371,.225*scale,.207*scale,.013,PLANTER_SOIL);
+    for(let i=0;i<7;i++){
+      const azimuth=i*2.39996+hash(seed,i,6)*.67;
+      const bend=.37+hash(seed,i,13)*.75,reach=.17+hash(seed,i,22)*.23;
+      const z=.54+hash(seed,i,35)*.22;
+      const x=Math.sin(azimuth)*reach,y=Math.cos(azimuth)*reach;
+      form(PLANTER_LEAF,x,y,z,.070+hash(seed,i,44)*.039,.020,.18+reach*.30,PLANTER_GREEN,0,azimuth,bend);
+      if(i<4)form(ACTOR_LIMB,x*.30,y*.30,.48,.014,.013,.13,PLANTER_STEM,0,azimuth,bend*.44);
+    }
+    return;
+  }
+  if(o.kind==='books'){
+    const depth=o.shallow?.105:.20;
+    box(0,-.04,.48,.72,depth,.46,FURNITURE_BOOKS);
+    for(const side of [-1,1])box(side*.715,0,.47,.06,depth+.025,.47,FURNITURE_WALNUT);
+    box(0,0,.945,.79,depth+.04,.028,FURNITURE_TRIM);
+    box(0,0,.055,.78,depth+.035,.039,FURNITURE_DARK);
+    for(const z of [.23,.41,.59,.77])box(0,0,z,.695,depth+.01,.012,FURNITURE_WALNUT);
+    return;
+  }
+  const desk=o.kind==='desk',width=desk?.67:.82,depth=desk?.25:.42;
+  box(0,0,.435,width,depth,.028,FURNITURE_WALNUT);
+  box(0,0,.390,width-.035,depth-.02,.026,FURNITURE_TRIM);
+  for(const x of [-width+.105,width-.105])for(const y of [-depth+.08,depth-.08]){
+    box(x,y,.186,.046,.046,.184,FURNITURE_WALNUT);
+    box(x,y,.024,.054,.054,.025,FURNITURE_DARK);
+  }
+  if(desk){
+    box(0,.012,.325,.55,.222,.04,FURNITURE_DARK);
+    for(const x of [-.32,0,.32]){
+      box(x,.243,.325,.143,.014,.033,FURNITURE_WALNUT);
+      form(ACTOR_ROUND,x,.264,.326,.025,.018,.016,FURNITURE_BRASS);
+    }
+  }
+}
 function humanMesh(o,pose,t,form,limb){
   const kind=o.t,c=HUMAN_COLORS[kind];
   const child=kind==='mara'||kind==='doll',doll=kind==='doll',skirt=child||kind==='nell';
@@ -4404,7 +4868,8 @@ function wispMesh(o,t,form){
   for(const side of [-1,1])form(ACTOR_ROUND,side*.082*size,.191*size,.48*size,.022*size,.025*size,.033*size,[91,76,72,.64]);
 }
 function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog){
-  const radius=o.t==='ent'?.80:o.t==='crawl'?.53:o.t==='pet'?.21:.43;
+  const furniture=o.t==='manorFurniture'||o.t==='manorFrame';
+  const radius=o.t==='manorFrame'?o.width*.55:furniture?1:o.t==='manorLantern'?.13:o.t==='ent'?.80:o.t==='crawl'?.53:o.t==='pet'?.21:.43;
   if(ty>radius+.08){
     const right=tx*.66,near=ty-radius;
     const center=W/2+right*WS/ty,spread=WS*radius*(1+Math.abs(right)/ty)/near;
@@ -4421,7 +4886,7 @@ function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog){
   const key=.85-P.a;
   const screenX=Math.max(0,Math.min(W-1,Math.round(W/2+tx*W/2/Math.max(.15,ty))));
   const frame={hz,fog,day:!!morning,keyX:Math.sin(key)*.75,keyY:-Math.cos(key)*.75,
-    forwardX:sin,forwardY:cos,light:Math.min(1.26,(cone[screenX]/(1+ty*ty*.25)+extra)*1.27+.04)};
+    forwardX:sin,forwardY:cos,light:Math.min(1.26,(cone[screenX]/(1+ty*ty*.25)+extra)*(furniture?1.65:1.27)+.04)};
   if(fog)actorBackground.set(buf);
   const draw=(mesh,point,material,lighting=frame)=>actorMesh(mesh,([x,y,z])=>{
     const [right,forward,up]=point(x,y,z);
@@ -4448,7 +4913,9 @@ function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog){
     draw(ACTOR_LIMB,(u,v,w)=>[cx+r*(u*ux+v*vx)+l*w*x,
       cy+r*(u*uy+v*vy)+l*w*y,cz+r*v*vz+l*w*z],m);
   };
-  if(o.t==='ent')lamplighterMesh(o,pose,t,form,limb);
+  if(o.t==='manorLantern')manorLanternMesh(o,t,form,limb);
+  else if(furniture)manorFurnitureMesh(o,form,t);
+  else if(o.t==='ent')lamplighterMesh(o,pose,t,form,limb);
   else if(o.t==='crawl')crawlerMesh(o,pose,t,form,limb);
   else if(o.t==='mobile')nurseryMobileMesh(t,form,limb);
   else if(o.t==='pet')wispMesh(o,t,form);
@@ -4460,7 +4927,7 @@ function render(t){
   const dx=Math.cos(P.a),dy=Math.sin(P.a),pX=-dy*.66,pY=dx*.66;
   const on=light.on&&light.flick,pow=on?(.3+.7*Math.min(1,light.bat/40))*lampStrength():0,wisp=wispStrength();
   for(let x=0;x<W;x++){const s=x/W-.5;cone[x]=pow*Math.exp(-s*s/(easy?.04:.031))}
-  const stepShake=E?.impact?Math.sin(t*53)*E.impact*H*.009:0;
+  const stepShake=(E?.impact?Math.sin(t*53)*E.impact*H*.009:0)+Math.sin(t*37)*Math.max(0,escapeGrace-2.8)*H*.025;
   const TH=morning?THEMES[0]:theme(),hz=H*(.5+(P.pitch||0))+bob+stepShake+(shakeV?(Math.random()-.5)*shakeV*H*.025:0);
   const insideHouse=morning&&P.y>=26&&P.y<31&&P.x>=28&&P.x<34;
   const insideLookout=morning&&P.y>=2&&P.y<5&&P.x>=4&&P.x<8;
@@ -4498,13 +4965,19 @@ function render(t){
       let lr=c*T0+ambR*ad,lg=c*T1+ambG*ad,lb=c*T2+ambB*ad;
       if(LT.length&&ix>0&&iy>0&&ix<S&&iy<S&&litAny[ix+iy*S]){lightAt(fx,fy,ix+iy*S);lr+=LA[0];lg+=LA[1];lb+=LA[2]}
       const roomId=manor&&ix>=0&&ix<S&&iy>=0&&iy<S?manor.tiles[ix+iy*S]:0;
-      if(roomId&&fl){
-        const room=manor.rooms[roomId-1],[x0,y0,x1,y1]=room.bounds;
-        const rug=room.idx!==5&&room.idx!==6&&fx>x0+1.3&&fx<x1-.3&&fy>y0+1&&fy<y1;
-        const seam=rug?Math.sin(fx*11+fy*9)*.035:(fx*4)%1<.07?-.22:0;
-        const detail=gr*(.90+seam+.10*hash(fx*43|0,fy*41|0,25));
-        const [r,g,b]=rug?room.color:room.idx===6?[78,89,77]:room.idx===5?[122,105,83]:[113,82,54];
-        buf[row+x]=px32(r*lr*2.9*detail|0,g*lg*2.9*detail|0,b*lb*2.9*detail|0);
+      if(manor){
+        const room=manor.rooms[roomId-1],bounds=room?.bounds;
+        const tiled=room?.prop==='range'||room?.prop==='planter';
+        let tex=fl?(tiled?MANOR_TILE:MANOR_TIMBER):MANOR_CEILING,detail=fl?2.82:1.96;
+        if(fl&&bounds&&!tiled){
+          const edge=Math.min(fx-bounds[0]-1.05,bounds[2]+.1-fx,fy-bounds[1]-.8,bounds[3]+.12-fy);
+          if(edge>0){
+            tex=MANOR_CARPET;
+            if(edge<.21)detail*=edge>.045&&edge<.125?1.48:.72;
+          }
+        }
+        const i=manorTextureOffset(fx,fy);
+        buf[row+x]=px32(tex[i]*lr*detail|0,tex[i+1]*lg*detail|0,tex[i+2]*lb*detail|0);
       }else if(morning&&(fx<0||fy<0||ix>=S||iy>=S)){
         buf[row+x]=px32(121,131,143);
       }else if(morning&&ix>=4&&ix<8&&iy>=2&&iy<=4){
@@ -4631,14 +5104,15 @@ function render(t){
     if(manor){
       const cell=(mx-(side?0:sx))+(my-(side?sy:0))*S;
       const room=manor.rooms[(manor.tiles[cell]||0)-1];
-      const [r,g,b]=room?.color||[106,72,53];
+      const tex=MANOR_WALLS[room?.idx]||MANOR_HALL_WALL;
+      const glass=room?.prop==='planter'&&my===room.bounds[1]-1;
+      const edge=Math.min(u,1-u),trim=edge<.045?.62:edge<.072?1.22:1;
+      const litR=(R0+.013*sd)*3.85*trim,litG=(G0+.016*sd)*3.85*trim,litB=(B0+.024*sd)*3.85*trim;
       for(let y=y0;y<y1;y++){
-        const v=(y-top)/lh,grain=.84+.16*hash(u*119|0,v*136|0,9);
-        const rail=Math.abs(v-.65)<.019||v>.95;
-        const panel=v>.67&&v<.94&&(u*3)%1>.07&&(u*3)%1<.93;
-        const stripes=.9+.10*Math.cos(u*61);
-        const k=grain*(rail?.73:panel?.81:v>.65?.49:stripes);
-        buf[y*W+x]=px32((r+17)*R0*k*4|0,(g+18)*G0*k*4|0,(b+13)*B0*k*4|0);
+        const v=(y-top)/lh,i=manorTextureOffset(u,v);
+        if(glass&&v<.65){
+          buf[y*W+x]=px32(GLASSHOUSE_WINDOW[i]*(litR+.12)|0,GLASSHOUSE_WINDOW[i+1]*(litG+.32)|0,GLASSHOUSE_WINDOW[i+2]*(litB+.40)|0);
+        }else buf[y*W+x]=px32(tex[i]*litR|0,tex[i+1]*litG|0,tex[i+2]*litB|0);
       }
       continue;
     }
@@ -4700,11 +5174,13 @@ function render(t){
   // sprites, far to near
   const drop=C?.drop;
   const descent=drop?Math.max(0,Math.min(1,drop.left>0?1-drop.left/.23:1+(drop.left+.16)/.67)):0;
-  const list=sprites.map(o=>{
+  const list=sprites.map(sprite=>{
+    const o=sprite.started!==undefined&&sprite.panel?swingingManorPanel(sprite):sprite;
     const pos=o===C&&drop?{x:o.x+(drop.x-o.x)*descent,y:o.y+(drop.y-o.y)*descent}:o;
     const [tx,ty]=camSpace(pos),actor=ACTORS.has(o.t);
-    return {o,tx,ty,pose:actor?actorPose(o,t):null};
-  }).filter(s=>s.pose?s.ty>-.34&&Math.abs(s.tx)<Math.max(0,s.ty)+1.1:s.ty>.12).sort((a,b)=>b.ty-a.ty);
+    const furniture=o.t==='manorFrame'||o.t==='manorFurniture'&&MANOR_FURNITURE_3D.has(o.kind);
+    return {o,tx,ty,pose:furniture||o.t==='manorLantern'?{yaw:o.a??Math.PI/2}:actor?actorPose(o,t):null};
+  }).filter(s=>s.pose?s.ty>-.34&&Math.abs(s.tx)<Math.max(0,s.ty)+(s.o.t==='manorFrame'?1.9:1.1):s.ty>.12).sort((a,b)=>b.ty-a.ty);
   objectDepth.fill(0);
   drawLamplighterShadow(hz);
   const allGot=sigils.every(s=>s.got);let tag=null;const glows=[];
@@ -4712,6 +5188,12 @@ function render(t){
     const fog=(o.aboard||o.t==='riverBoat'&&!o.moored)?Math.max(0,Math.min(1,(o.y-14.15)/2.50)):o===ghost?.48:0;
     const tile=(o.x|0)+(o.y|0)*S;lightAt(o.x,o.y,tile);const extra=(LA[0]+LA[1]+LA[2])/3;
     if(pose)drawActor(o,tx,ty,hz,t,pose,o===C?descent:0,extra,fog);
+    if(o.t==='manorLantern'&&ty>.15){
+      const x=W/2*(1+tx/ty),y=hz-(.684-.5)*WS/ty;
+      if(x>=0&&x<W&&ty<zbuf[x|0]&&y>=0&&y<H&&objectDepth[(y|0)*W+(x|0)]<=1/(ty-.14)){
+        glows.push([x,y,Math.min(H*.22,WS/ty*.31),o.glow||'255,172,75',.31*manorLanternFlicker(o,t)]);
+      }
+    }
     if(pose&&o.t!=='pet'){
       if(o.t==='friend'&&ty>.12){
         const sx=W/2*(1+tx/ty);
@@ -4877,12 +5359,16 @@ function shadeManorFurniture(kind,u,v,L){
     return trim?ink(112,82,45):brass?ink(141,106,51):ink(59,43,31);
   }
   if(kind==='books'){
-    if(frame||(v*5)%1<.13)return ink(105,71,43);
-    if(v>.85)return ink(55,36,25);
-    const slot=u*25|0,spine=(u*25)%1;
-    if(spine<.12||hash(slot,Math.floor(v*5),25)>.81)return ink(35,27,21);
-    const band=(v*5)%1,red=hash(slot,8,3);
-    return ink(67+red*56,52+hash(slot,4,9)*43,45+hash(slot,4,7)*31,band>.67&&band<.74?1.4:1);
+    const row=v*5|0,band=(v*5)%1;
+    if(frame||band>.89)return ink(107,68,43,manorWood(u,v,u*115|0,v*90|0,3)*(band>.96?1.12:.85));
+    const offset=hash(row,7,17)*.75,column=u*24+offset,slot=column|0,spine=column%1;
+    const cover=hash(slot,row,9),height=.17+.34*hash(slot,row,25);
+    const spineWidth=.69+.27*hash(slot,row,38);
+    if(band<height||spine>spineWidth||cover>.93)return ink(40,29,23,band>.74?1.13:.76);
+    const gilt=spine>.19&&spine<spineWidth-.12&&(Math.abs(band-height-.10)<.02||Math.abs(band-.73)<.018);
+    const depth=.79+.23*Math.sin(Math.PI*spine/spineWidth);
+    if(gilt)return ink(156,119,73,depth);
+    return ink(63+cover*56,48+hash(slot,row,13)*40,37+hash(slot,row,22)*41,depth);
   }
   if(kind==='portrait'){
     if(frame||x>.40||v<.15||v>.84)return ink(150,106,51);
@@ -4914,9 +5400,8 @@ function shadeManorFurniture(kind,u,v,L){
     }
     return v>.75&&x>.34&&x<.44?ink(81,53,36):0;
   }
-  if(v>.43&&x<.44&&(kind==='piano'&&v<.63||x>.34&&x<.43))return ink(74,48,32);
+  if(v>.43&&x>.34&&x<.43)return ink(74,48,32);
   if(v>.39||x>.49)return 0;
-  if(kind==='piano'&&v>.21&&v<.34&&x<.39)return (u*26)%1<.16?ink(34,27,24):ink(192,175,138);
   return ink(111,71,42,v<.10?1.15:.85);
 }
 function shade(o,u,v,time,L,open){
@@ -5595,7 +6080,13 @@ function journalLeads(inRun=false){
     }).join('')}</ul></details>`:'';
 }
 function manorSigilChecklist(){
-  if(!manor||!save.manorNotes.includes(MANOR_LIBRARY_CLUE))return '';
+  if(!manor)return '';
+  if(manorStairsReady()){
+    const pinned=manor.pin==='stairs';
+    return `<details class="journalLeads" open><summary>The cellar stairs are open</summary>
+      <button class="sm" data-sigil-room="stairs" aria-pressed="${pinned}">${pinned?'Clear route to':'Route to'} cellar stairs</button></details>`;
+  }
+  if(!save.manorNotes.includes(MANOR_LIBRARY_CLUE))return '';
   const found=sigils.filter(sigil=>sigil.got).length;
   return `<details class="journalLeads" open><summary>Manor sigils (${found} of ${sigils.length})</summary>
     <ul>${sigils.map(({room,got})=>{
@@ -5613,7 +6104,7 @@ function toggleMorningPin(place){
   morning.pin=morning.pin?.place===place?null:morningDestination(place);
 }
 function toggleManorPin(room){
-  if(manor.rooms[room]?.visited)manor.pin=manor.pin===room?null:room;
+  if(room==='stairs'?manorStairsReady():manor.rooms[room]?.visited)manor.pin=manor.pin===room?null:room;
 }
 function leadPinButton(place){
   const {name}=morningDestination(place),pinned=morning.pin?.place===place;
@@ -5665,23 +6156,31 @@ function openFieldJournal(){
   fieldJournalOpen=true;clearInput();
   document.exitPointerLock?.();
   const panel=$('fieldJournal'),rooms=manor?.rooms.filter(r=>r.visited)||[];
+  const escape=floorEscapeDestination();
   panel.innerHTML=`<div class="journalTop"><h2 id="fieldJournalTitle">Journal</h2><button class="sm" id="closeJournal">BACK</button></div>
     <div class="journalContent">${coop?'<p>The game is still running while you read.</p>':''}
     ${rooms.length?`<p>Pin a room to trace a route through explored halls.</p><div class="journalRooms">${rooms.map(r=>`<button class="sm" data-room="${r.idx}" aria-pressed="${r.idx===manor.pin}">${r.name}</button>`).join('')}</div>`:''}
     ${journalLeads(true)}
     ${manorSigilChecklist()}
+    ${escape?`<details class="journalLeads" open><summary>${floor===2?'Leave the cellar':'Leave the third floor'}</summary>
+      <button class="sm" id="floorEscapeRouteButton" aria-pressed="${floorEscapeRoute.active}">${floorEscapeRoute.active?'Clear exit route':'Route to '+escape.name}</button></details>`:''}
     ${journalSearch(false)}</div>`;
   bindJournalSearch(panel);
   panel.style.display='block';panel.scrollTop=0;
   panel.dataset.returnToPause=returnToPause?'1':'0';
   $('closeJournal').onclick=()=>closeFieldJournal();
+  const escapeButton=$('floorEscapeRouteButton');
+  if(escapeButton)escapeButton.onclick=()=>{
+    floorEscapeRoute.active=!floorEscapeRoute.active;
+    closeFieldJournal(true);mapOpen=true;
+  };
   panel.querySelectorAll('[data-lead-pin]').forEach(button=>button.onclick=()=>{
     toggleMorningPin(button.dataset.leadPin);
     closeFieldJournal(true);
     mapOpen=true;
   });
   panel.querySelectorAll('[data-room], [data-sigil-room]').forEach(button=>button.onclick=()=>{
-    const room=Number(button.dataset.room??button.dataset.sigilRoom);
+    const place=button.dataset.room??button.dataset.sigilRoom,room=place==='stairs'?place:Number(place);
     toggleManorPin(room);
     const pinned=manor.pin!==null;
     closeFieldJournal(pinned);
@@ -5827,11 +6326,12 @@ function loop(now){
   if(state!=='play'&&dreadV){dreadV=0;dreadSet(0)}
   if(fieldJournalOpen&&state!=='play'&&state!=='pause')closeFieldJournal();
   const mo=state==='play'&&mapOpen&&!fieldJournalOpen;
-  const room=manor?.rooms[manor.pin],outdoorPin=morning?.pin;
-  const route=state==='play'&&!fieldJournalOpen&&(room||outdoorPin)?
-    room?manorMapRoute(room):morningMapRoute(outdoorPin):null;
+  const room=manor?.rooms[manor.pin],outdoorPin=morning?.pin,stairs=manor?.pin==='stairs';
+  const escape=floorEscapeRoute?.active?floorEscapeDestination():null;
+  const route=state==='play'&&!fieldJournalOpen?
+    room?manorMapRoute(room):stairs?manorStairsRoute():outdoorPin?morningMapRoute(outdoorPin):escape?floorEscapeMapRoute(escape):null:null;
   const next=nextRouteDirection(route);
-  const directionText=!mo&&!hidden&&next?`${next} · ${room?.name||outdoorPin.name}`:'';
+  const directionText=!mo&&!hidden&&next?`${next} · ${stairs?'Cellar stairs':room?.name||outdoorPin?.name||escape?.name}`:'';
   const routeCue=$('routeCue');
   routeCue.hidden=!directionText;
   if(routeCue.textContent!==directionText)routeCue.textContent=directionText;
@@ -5848,7 +6348,13 @@ function loop(now){
   }
   if(mo)drawMap();
   const info=$('mapInfo');
-  info.style.display=mo&&(manor||morning)?'block':'none';
+  info.style.display=mo&&(manor||morning||escape)?'block':'none';
+  if(mo&&escape){
+    const destination=route.status==='arrived'&&escape.key==='gate'?(escape.friendKey?'Your friend has the key':'Use the key on the iron gate'):
+      route.status==='mapped'?`Route to ${escape.name}`:route.steps.length?`Toward ${escape.name} · Explored path only`:`${escape.name} · No explored route yet`;
+    const label=[destination,next,isTouch?'Tap Map to close':'M to close'].filter(Boolean).join(' · ');
+    if(info.textContent!==label)info.textContent=label;
+  }
   if(mo&&morning?.pin){
     const {pin}=morning;
     const text=route.status==='arrived'?`You’ve reached ${pin.name}`:
@@ -5863,12 +6369,13 @@ function loop(now){
   }
   if(mo&&manor){
     const pin=room;
-    const destination=route?.status==='arrived'?`You're in ${pin.name}`:
+    const destination=stairs?(route.status==='mapped'?'Route to cellar stairs':route.steps.length?'Toward cellar stairs · Explored path only':'Cellar stairs are open'):
+      route?.status==='arrived'?`You're in ${pin.name}`:
       route?.status==='mapped'?`Route to ${pin.name}`:
       pin?`Pinned ${pin.name} · No explored route yet`:
       landmarks.querySelector('.mapIndex')?'Select a marker or use the room index':isTouch?'Tap a room to pin it':'Select a room to pin it';
     const count=save.manorNotes.includes(MANOR_LIBRARY_CLUE)?`Sigils ${sigils.filter(sigil=>sigil.got).length}/${sigils.length}`:'';
-    const label=[destination,next,count,'◆ unread clue',isTouch?'Tap Map to close':'M to close'].filter(Boolean).join(' · ');
+    const label=[destination,next,count,'◆ unread clue','▯ hiding spot',isTouch?'Tap Map to close':'M to close'].filter(Boolean).join(' · ');
     if(info.textContent!==label)info.textContent=label;
   }
   if(state==='scare')drawScare(now);
