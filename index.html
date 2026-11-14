@@ -53,6 +53,7 @@ button.fr{background:#001a12;border-color:#2a7}
 #fl,#th,#mp,#chk,#wb{z-index:5}
 #chk{top:154px}
 #wb{top:202px;border-color:#7ab;color:#cef}
+#wb[data-recharging]{border-color:#736957;color:#c2af94}
 #pz{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:none;padding:6px 14px;font-size:14px;min-width:0;z-index:5;opacity:.75}
 /* upright phones: the readout stays clear of the buttons, pause sits under them */
 @media (max-width:500px){#hud{font-size:12px;max-width:calc(100vw - 140px)}#pz{left:auto;right:12px;transform:none;top:250px}}
@@ -421,7 +422,7 @@ let firstEscape=true,escapeGrace=0,escapeCover=null,escapeMapRevision=0;
 let footTrail=[],follower=null,nextFollower=0,annex=null,stair=null,morning=null,manor=null,cellarTrace=null;
 let blackout=null;
 let mobiles=[],mobileTurn=0,nurseryQuiet=false;
-let bursts=1,burstT=0,burstN=0;
+let wispReadyAt=0,burstT=0,burstN=0;
 let papa=null,trail=[],papaCallT=0,papaCallN=0;
 let seen=null,chalk=[],chalkAt=new Map(),mapOpen=false,ckSig='';
 let endless=false,caughtRun=false,easy=false,C=null,moving=false,walking=false,continued=false,stamina=100,winded=false,running=false,behindT=0,blackT=0,pages=[],lockers=[],gate=null,keyS=null,hasKey=false,regionA=null,stones=3,stoneS=null,lure=null,hidden=null,lightWas=true,actNow=null;
@@ -725,7 +726,7 @@ function newGame(fl,bat=100,tries=0){
   if(manor)try{mergeManorMap(readManorMap(localStorage.getItem(MANOR_MAP_KEY)))}catch{}
   pet={x:P.x+Math.cos(P.a)*.8,y:P.y+Math.sin(P.a)*.8,t:'pet'};petKey='';
   light={on:true,bat,flick:true};
-  finale=null;shakeV=0;trailT=0;lastFind=0;trailShow=0;bursts=easy?2:1;burstT=0;if(E)E.stun=0;writes=new Map();flash=null;flashT=(nightmare?35:60)+Math.random()*40;writeT=(nightmare?25:40)+Math.random()*30;stones=(easy?5:3)+(PLAYERS[save.character].extraStones??0);stoneS=null;lure=null;hidden=null;
+  finale=null;shakeV=0;trailT=0;lastFind=0;trailShow=0;wispReadyAt=0;burstT=0;if(E)E.stun=0;writes=new Map();flash=null;flashT=(nightmare?35:60)+Math.random()*40;writeT=(nightmare?25:40)+Math.random()*30;stones=(easy?5:3)+(PLAYERS[save.character].extraStones??0);stoneS=null;lure=null;hidden=null;
   stopFollower();ghost=null;footTrail=[];nextFollower=8+Math.random()*7;eStepT=0;
   behindT=45+Math.random()*30;blackT=40+Math.random()*30;
   timeIn=0;loudCoverUntil=0;resetLanternMotion();stingCd=6;wasSeen=false;nextFlick=15+Math.random()*15;flickT=0;Dp=null;DpTile=-1;
@@ -1051,6 +1052,7 @@ function netSend(){
   const p={role:coop.role,n:save.name.slice(0,12),c:save.light,p:[r2(P.x),r2(P.y),r2(P.a)],l:light.on&&light.flick?1:0,
     h:hidden&&!hidden.spotted?1:0,f:floor,sg:mask(sigils),k:(keyS?.got||hasKey)?1:0,g:gate?.open?1:0,st:state,lr:coop.lr||null,sq:coop.sq||null};
   p.mv=walking?1:0;p.rn=running?1:0;p.ck=chalk;p.wb=burstN;p.hu=hidden?.uses||null;p.lb=r2(lampStrength());
+  if(coop.wispOrigin?.[2]===floor)p.wbp=coop.wispOrigin;
   if(hidden?.loud)p.hn=1;
   if(coop.coverExit)p.he=coop.coverExit;
   p.character=save.character;
@@ -1111,7 +1113,14 @@ function netRecv(dt){
   }
   if(coop.role==='guest'&&Array.isArray(q.fn))syncFinale(q.fn);
   if(coop.role==='guest'&&Array.isArray(q.bo))syncBlackout(q.bo);
-  if(typeof q.wb==='number'&&coop.role==='host'){if(coop.lastWb===undefined)coop.lastWb=q.wb;else if(q.wb>coop.lastWb){coop.lastWb=q.wb;if(applyBurst(q.p[0],q.p[1]))say(`${fname()}'s Wisp blazed. It fled!`,3)}}
+  if(Number.isSafeInteger(q.wb)&&coop.role==='host'){
+    const previous=coop.lastWb??(was?.wb||0);
+    coop.lastWb=Math.max(previous,q.wb);
+    const origin=q.wbp??q.p;
+    if(q.wb>previous&&q.st==='play'&&Array.isArray(origin)&&(!q.wbp||origin[2]===floor)&&applyBurst(origin[0],origin[1])){
+      say(fname()+'’s Wisp drove a monster back.',3);
+    }
+  }
   const cs=Array.isArray(q.ck)?q.ck.join():'';if(cs!==ckSig){ckSig=cs;rebuildChalk()}  // their chalk stars
   // their body
   const fs=coop.fs||(coop.fs={t:'friend',x:q.p[0],y:q.p[1]});
@@ -2195,23 +2204,39 @@ function drawMapLandmarks(map,x0,y0,columns,rows){
     if(indexFocused)summary.focus({preventScroll:true});
   }
 }
-// Wisp burst: once a floor (twice on Easy) Wisp blazes so bright that whatever is near flees
+const wispWait=()=>Math.max(0,wispReadyAt-timeIn);
 function applyBurst(x,y){
-  const D=bfs(x|0,y|0);let hit=false;
-  if(D[(E.x|0)+(E.y|0)*S]>=0&&D[(E.x|0)+(E.y|0)*S]<=8){sendCreatureAway();E.chase=false;E.windup=0;E.stun=2.5;hit=true}
-  if(C&&D[(C.x|0)+(C.y|0)*S]>=0&&D[(C.x|0)+(C.y|0)*S]<=8){crawlAway();hit=true}
-  if(Dl&&D[(Dl.x|0)+(Dl.y|0)*S]>=0&&D[(Dl.x|0)+(Dl.y|0)*S]<=8){dollAway();Dl.stun=3;hit=true}
+  if(!Number.isFinite(x)||!Number.isFinite(y)||solid(x,y))return false;
+  const D=bfs(x|0,y|0,true);
+  const near=monster=>{
+    if(!monster)return false;
+    const distance=D[(monster.x|0)+(monster.y|0)*S];
+    return distance>=0&&distance<=8;
+  };
+  let hit=false;
+  if(near(E)){sendCreatureAway();Object.assign(E,{chase:false,windup:0,inspection:null,stun:2.5});hit=true}
+  if(near(C)){crawlAway();hit=true}
+  if(near(Dl)){dollAway();Dl.stun=3;hit=true}
+  if(manor){
+    for(const [kind,monster] of [['G',manor.gardener],['M',manor.conductor],['H',manor.moth]]){
+      if(monster.stage==='waiting'||!near(monster))continue;
+      moveCreatureAway(kind);hit=true;
+    }
+  }
   return hit;
 }
 function wispBurst(){
-  if(state!=='play'||hidden)return;
-  if(bursts<=0){say('Wisp is too tired. It needs a new floor to shine again.',2);return}
-  bursts--;burstT=.7;burstN++;
+  if(state!=='play'||morning)return;
+  if(hidden){say('Step out of the locker to use Wisp.',2);return}
+  if(wispWait()>0){say('Wisp recharges in '+Math.ceil(wispWait())+' seconds.',2);return}
+  wispReadyAt=timeIn+(easy?12:nightmare?24:18);burstT=.7;burstN++;
   tone(660,.5,.12,'sine');tone(990,.6,.1,'triangle',A.currentTime+.05,1980);noise(.5,5000,1,.06,'highpass');
   const hit=coop?.role==='guest'?null:applyBurst(P.x,P.y);
-  if(hit)playSfx('scream',.35,panOf(E),1.6);
-  say(hit===null?'Wisp blazes!':hit?'Wisp blazes! It shrieks and flees into the dark.':'Wisp blazes... but nothing was there.',3);
-  if(coop){coop.sent=0;netSend()}
+  say(hit===null?'Wisp blazes!':hit?'Wisp drove the nearby monsters back.':'Wisp blazes. No monsters were in range.',3);
+  if(coop){
+    coop.wispOrigin=[P.x,P.y,floor];
+    netSendNow();
+  }
 }
 function hatLine(){const n=Object.keys(save.tro||{}).length,nx=HATS.find(h=>h.need>n);return (save.hat>=0?`Wisp's hat: ${HATS[save.hat].n}`:"Wisp's hat: none")+(nx?` · next at ${nx.need} trophies`:'')}
 // pause: the house stops while she's away (solo only; in co-op the house never stops)
@@ -4572,7 +4597,7 @@ function update(dt){
   // a face out of nowhere for a blink. It can't hurt her, but she doesn't know that.
   if(msgT<=0&&!hidden){const T=save.tips||(save.tips={}),tip=(id,txt)=>{if(!T[id]){T[id]=1;store();say(txt,5);return true}return false};
     (lit(E)&&Math.hypot(E.x-P.x,E.y-P.y)<4.5&&tip('freeze','It froze in your light! Keep your light on it and it cannot move.'))||
-    (dreadV>.55&&bursts>0&&!lit(E)&&tip('burst',isTouch?'Tap WISP to blast it away!':'Press R (or tap WISP) to blast it away!'))||
+    (dreadV>.55&&wispWait()===0&&!lit(E)&&tip('burst',isTouch?'Tap WISP to blast it away!':'Press R (or tap WISP) to blast it away!'))||
     (timeIn>50&&tip('map',isTouch?'Lost? Tap MAP to see where you have been.':'Lost? Press M (or tap MAP) to see where you have been.'))||
     (timeIn>95&&T.map&&tip('chalk',isTouch?'Tap CHALK to draw a star on a wall, so you know you were here.':'Press C to chalk a star on a wall, so you know you were here.'))||
     (timeIn>30&&stones>0&&dreadV>.3&&tip('stone',isTouch?'Tap THROW to toss a stone. It goes to look at the noise.':'Press G to throw a stone. It goes to look at the noise.'))}
@@ -4590,7 +4615,10 @@ function update(dt){
   chargeBar.toggleAttribute('data-low',light.bat>0&&light.bat<20);
   $('stf').style.width=stamina+'%';$('stf').classList.toggle('out',winded);
   joyDraw(push);
-  $('inv').textContent=`STONES ${'●'.repeat(stones)}${'○'.repeat(Math.max(0,(easy?5:3)-stones))}${hasKey?' · KEY':''} · WISP ${'✦'.repeat(bursts)||'–'}${stair?.watch.carrying?" · MARA'S LAMP":''}${nightmare?' · NIGHTMARE':easy?' · EASY':''}`;
+  const wispButton=$('wb'),wait=Math.ceil(wispWait()),wispLabel=wait?'WISP '+wait+'s':'WISP';
+  wispButton.toggleAttribute('data-recharging',wait>0);
+  if(wispButton.textContent!==wispLabel)wispButton.textContent=wispLabel;
+  $('inv').textContent=`STONES ${'●'.repeat(stones)}${'○'.repeat(Math.max(0,(easy?5:3)-stones))}${hasKey?' · KEY':''} · WISP ${wispWait()>0?Math.ceil(wispWait())+'s':'✦'}${stair?.watch.carrying?" · MARA'S LAMP":''}${nightmare?' · NIGHTMARE':easy?' · EASY':''}`;
   if(coop?.fp){
     const status=friendHere()?`${Math.round(Math.hypot(coop.fs.x-P.x,coop.fs.y-P.y))} STEPS AWAY`
       :['scare','grab'].includes(coop.fp.st)?'CAUGHT':'ANOTHER FLOOR';
