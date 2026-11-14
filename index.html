@@ -28,6 +28,7 @@ button.fr{background:#001a12;border-color:#2a7}
 #hud{position:fixed;top:12px;left:16px;font-size:15px;color:#888;pointer-events:none;line-height:1.6;display:none}
 #bat{width:90px;height:6px;border:1px solid #555;display:inline-block;vertical-align:middle;margin-left:6px}
 #batf{height:100%;background:#cc9}
+#batf[data-low]{background:#ca884e}
 #stb{width:90px;height:6px;border:1px solid #555;display:inline-block;vertical-align:middle;margin-left:6px}
 #stf{height:100%;background:#8ab}
 #toast{position:fixed;top:14px;left:50%;transform:translate(-50%,-80px);background:rgba(20,14,6,.92);border:1px solid #a80;color:#fd8;padding:8px 18px;font-size:15px;letter-spacing:.08em;transition:transform .4s;pointer-events:none;z-index:5;text-align:center}
@@ -84,10 +85,12 @@ button.fr{background:#001a12;border-color:#2a7}
 .jr button{margin-top:12px}
 .characterPicker{width:min(460px,100%);margin:0;padding:7px 10px 10px;border:1px solid #71543d;box-sizing:border-box}
 .characterPicker legend{padding:0 6px;color:#e8d1ab}
-.characterPreview{display:block;width:100%;height:148px;margin-bottom:8px;background:radial-gradient(ellipse at 50% 52%,#51402f,#201811 67%);border-bottom:1px solid #604936}
+.characterPreview{display:block;width:100%;height:clamp(192px,30vh,252px);margin-bottom:8px;background:radial-gradient(ellipse at 52% 46%,#3c3126,#191511 74%);border-bottom:1px solid #604936}
 .characterPreview canvas{display:block;width:100%;height:100%;object-fit:contain}
 .characterPreview canvas:focus-visible{outline:2px solid #e5bb87;outline-offset:-2px}
 .characterPreview canvas{touch-action:pan-y;cursor:ew-resize}
+.characterPreview{position:relative}
+.characterPreview button{position:absolute;right:6px;bottom:6px;min-width:0;padding:5px 9px;font-size:12px;letter-spacing:0;background:#1d1711;border-color:#84684d}
 #ui .characterOutfit{margin:0 0 4px;color:#cdb793;font-size:13px}
 #ui .characterPerk{margin:0 auto 10px;color:#eee0c3;font-size:14px}
 .characterChoices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
@@ -712,7 +715,7 @@ function newGame(fl,bat=100,tries=0){
   finale=null;shakeV=0;trailT=0;lastFind=0;trailShow=0;bursts=easy?2:1;burstT=0;if(E)E.stun=0;writes=new Map();flash=null;flashT=(nightmare?35:60)+Math.random()*40;writeT=(nightmare?25:40)+Math.random()*30;stones=(easy?5:3)+(PLAYERS[save.character].extraStones??0);stoneS=null;lure=null;hidden=null;
   stopFollower();ghost=null;footTrail=[];nextFollower=8+Math.random()*7;eStepT=0;
   behindT=45+Math.random()*30;blackT=40+Math.random()*30;
-  timeIn=0;loudCoverUntil=0;stingCd=6;wasSeen=false;nextFlick=15+Math.random()*15;flickT=0;Dp=null;DpTile=-1;
+  timeIn=0;loudCoverUntil=0;resetLanternMotion();stingCd=6;wasSeen=false;nextFlick=15+Math.random()*15;flickT=0;Dp=null;DpTile=-1;
   if(coop){coop.fTile=-1;coop.Dq=null;coop.Dmin=null}
   buildSprites();
 }
@@ -1217,7 +1220,12 @@ function releaseTouches(e){
 }
 cv.addEventListener('touchend',releaseTouches);
 cv.addEventListener('touchcancel',releaseTouches);
-function toggleLight(){if(light.bat<=0||hidden)return;light.on=!light.on;if(A)tone(blackout?.stage==='dark'?430:1800,.04,.08,'square')}
+function toggleLight(){
+  if(light.bat<=0||hidden)return;
+  light.on=!light.on;
+  lanternMotion.toggle=0;
+  if(A)tone(blackout?.stage==='dark'?430:1800,.04,.08,'square');
+}
 $('fl').addEventListener('click',e=>{e.stopPropagation();toggleLight()});
 $('th').addEventListener('click',e=>{e.stopPropagation();throwStone()});
 $('mp').addEventListener('click',e=>{e.stopPropagation();mapOpen=!mapOpen});
@@ -2318,20 +2326,66 @@ function closePage(){if(state!=='read')return;stopNarr();$('note').style.display
 // her own hand holding the lantern, bottom right. It sways as she walks and goes dark with the light.
 const motes=Array.from({length:22},()=>({x:.25+Math.random()*.5,y:.3+Math.random()*.5,vx:(Math.random()-.5)*.03,vy:(Math.random()-.5)*.01,r:.6+Math.random()*1.1,p:Math.random()*7}));
 const PLAYER_HANDS={};
+const LANTERN_SLEEVES={
+  ada:{cloth:[111,49,60],cuff:[159,121,96],detail:'edge'},
+  caleb:{cloth:[54,81,113],cuff:[105,132,148],detail:'stitch'},
+  inez:{cloth:[143,99,49],cuff:[88,56,34],detail:'bands'}
+};
+const LANTERN_GRIPS={
+  searcher:{x:.95,y:.96,sway:.015,bob:.019,roll:.052},
+  ada:{x:1.01,y:1.025,sway:.008,bob:.011,roll:.025},
+  caleb:{x:.88,y:.91,sway:.018,bob:.022,roll:.063},
+  inez:{x:1.07,y:.965,sway:.011,bob:.014,roll:.038}
+};
+const LANTERN_TOGGLE_DURATION=.35;
+const lanternMotion={phase:0,pace:0,sprint:0,toggle:LANTERN_TOGGLE_DURATION};
+function resetLanternMotion(){
+  lanternMotion.phase=lanternMotion.pace=lanternMotion.sprint=0;
+  lanternMotion.toggle=LANTERN_TOGGLE_DURATION;
+}
+function updateLanternMotion(dt,distance){
+  lanternMotion.toggle=hidden?LANTERN_TOGGLE_DURATION:Math.min(LANTERN_TOGGLE_DURATION,lanternMotion.toggle+dt);
+  const ease=1-Math.exp(-dt*10);
+  lanternMotion.pace+=((walking?1:0)-lanternMotion.pace)*ease;
+  lanternMotion.sprint+=((walking&&running?1:0)-lanternMotion.sprint)*ease;
+  if(walking){
+    const cadence=PLAYER_MODELS[save.character].cadence;
+    lanternMotion.phase=(lanternMotion.phase+distance*cadence/(running?1.35:1))%(Math.PI*2);
+  }
+}
 function buildPlayerHands(image){
   const w=image.naturalWidth,h=image.naturalHeight;
-  for(const [id,player] of Object.entries(PLAYERS)){
-    if(id==='searcher')continue;
+  for(const [id,style] of Object.entries(LANTERN_SLEEVES)){
+    const player=PLAYERS[id],skin=player.skin,baseSkin=PLAYERS.searcher.skin;
     const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
     const g=canvas.getContext('2d');g.drawImage(image,0,0);
     const frame=g.getImageData(0,0,w,h),pixels=frame.data;
-    for(let y=0;y<h;y++)for(let x=w>>1;x<w;x++){
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
       const i=(x+y*w)*4,r=pixels[i],green=pixels[i+1],b=pixels[i+2];
       if(!pixels[i+3])continue;
-      const sleeve=Math.max(0,Math.min(1,(green-r*.91)/17,(green-b*.94)/17));
-      if(!sleeve)continue;
-      const value=(r+green*2+b)/4;
-      for(let channel=0;channel<3;channel++)pixels[i+channel]+=(value*player.color[channel]/99-pixels[i+channel])*sleeve;
+      const u=x*360/w,v=y*426/h;
+      // The cuff rises diagonally from the wrist toward the outer edge.
+      const seam=v-(128-.66*(u-178)+.006*(u-178)**2);
+      const greenThread=green>=r*.90&&green>b*1.10?Math.min(1,(green-b*1.10)/11):0;
+      const sleeve=u>166&&v>87?Math.max(0,Math.min(1,Math.max(greenThread,(seam+2)/8),(u-166)/12)):0;
+      if(sleeve){
+        const value=(r+green*2+b)/4;
+        const fold=v-(152-.55*(u-182)+.007*(u-182)**2);
+        const trim=style.detail==='edge'?Math.max(0,1-Math.abs(seam-12)/8)*.9:
+          style.detail==='stitch'?Math.max(0,1-Math.abs(seam-15)/3.5)*(u%10<5?.94:.22):
+          Math.max(0,1-Math.min(Math.abs(fold-3),Math.abs(fold-15))/5)*.86;
+        const warm=Math.max(0,Math.min(.46,(r-green)/115));
+        for(let channel=0;channel<3;channel++){
+          const tint=style.cloth[channel]*(1-trim)+style.cuff[channel]*trim;
+          const target=value*(tint/84*(1-warm)+warm)+(channel===0?warm*17:0);
+          pixels[i+channel]+=(target-pixels[i+channel])*sleeve;
+        }
+      }else if(u>74&&v<132&&r-green>15&&green-b>12){
+        const hand=Math.min(1,(r-green-15)/22,(green-b-12)/22,(u-74)/12,(132-v)/12);
+        for(let channel=0;channel<3;channel++){
+          pixels[i+channel]+=(skin[channel]-baseSkin[channel])*hand*.75;
+        }
+      }
     }
     g.putImageData(frame,0,0);
     const dark=document.createElement('canvas');dark.width=w;dark.height=h;
@@ -2340,22 +2394,55 @@ function buildPlayerHands(image){
     PLAYER_HANDS[id]={canvas,dark};
   }
 }
-function drawHand(){
+function lanternHandPose(hw,hh,t){
+  const grip=LANTERN_GRIPS[save.character],{phase,pace,sprint}=lanternMotion;
+  const swing=Math.sin(phase),drop=(1-Math.cos(phase*2))*.5;
+  const breath=Math.sin(t*2.4)*(1-pace);
+  const shake=(dreadV||0)*Math.sin(t*41);
+  const switchProgress=lanternMotion.toggle/LANTERN_TOGGLE_DURATION;
+  const twist=Math.sin(Math.PI*switchProgress)*(light.on?-1:1);
+  return {
+    x:W-hw*grip.x+W*(grip.sway*swing*pace*(1+sprint*.4)+shake*.0035)-hw*(.035*sprint-.04*twist),
+    y:H-hh*grip.y+H*(grip.bob*drop*pace*(1+sprint*.65)+breath*.003+shake*.002)-hh*(.055*sprint-.075*twist),
+    roll:grip.roll*Math.sin(phase-.52)*pace*(1+sprint*.75)+breath*.009+shake*.012+twist*.12
+  };
+}
+function lanternGlassPower(t){
+  if(!light.on||!light.flick||light.bat<=0)return 0;
+  const progress=lanternMotion.toggle/LANTERN_TOGGLE_DURATION;
+  const catching=Math.min(1,progress*2.5);
+  // Local flame movement leaves the gameplay beam and its timing alone.
+  const strain=1-Math.min(1,light.bat/20);
+  const flutter=.5+.32*Math.sin(t*8)+.18*Math.sin(t*17+.8);
+  return lampStrength()*(.22+.78*catching*catching)*(1-strain*(.30+.38*flutter));
+}
+function drawHand(t){
   const im=ART.hand;if(hidden||!im.complete||!im.naturalWidth)return;
-  const on=light.on&&light.flick,asp=im.naturalWidth/im.naturalHeight,hh=Math.min(H*.44,W*.36/asp),hw=hh*asp;
-  const sw=Math.sin(walkPh*.5)*W*.012,bb=Math.abs(Math.cos(walkPh*.5))*H*.018*(running?1.8:1);
-  const tr2=(dreadV||0)*W*.012,x=W-hw*.95+sw+(Math.random()-.5)*tr2,y=H-hh*.96+bb+(Math.random()-.5)*tr2;
-  const power=on?lampStrength():0;
+  const asp=im.naturalWidth/im.naturalHeight,hh=Math.min(H*.44,W*.36/asp),hw=hh*asp;
+  const {x,y,roll}=lanternHandPose(hw,hh,t);
+  const progress=lanternMotion.toggle/LANTERN_TOGGLE_DURATION;
+  const power=lanternGlassPower(t);
   const hand=PLAYER_HANDS[save.character],image=hand?.canvas||im,dark=hand?.dark||ART.handDark;
+  cx.save();
+  cx.translate(x+hw*.79,y+hh*.79);
+  cx.rotate(roll);
+  cx.translate(-x-hw*.79,-y-hh*.79);
   if(power<1&&dark){
     cx.drawImage(dark,x,y,hw,hh);
     if(power>0){cx.globalAlpha=power;cx.drawImage(image,x,y,hw,hh);cx.globalAlpha=1}
   }else cx.drawImage(image,x,y,hw,hh);
-  if(on){  // the flame lights the air around it, in her light's colour
+  if(power>0){  // the flame lights the air around it, in her light's colour
     const fx=x+hw*.27,fy=y+hh*.74,r=hh*.5,c=hexRgb(LIGHTS[save.light].c),a=(.18+.22*Math.min(1,light.bat/40))*power;
     const g=cx.createRadialGradient(fx,fy,0,fx,fy,r);g.addColorStop(0,`rgba(${c},${a})`);g.addColorStop(1,`rgba(${c},0)`);
     cx.globalCompositeOperation='lighter';cx.fillStyle=g;cx.fillRect(fx-r,fy-r,r*2,r*2);cx.globalCompositeOperation='source-over';
+  }else if(!light.on&&progress<.45&&blackout?.stage!=='dark'){
+    const ember=1-progress/.45,fx=x+hw*.26,fy=y+hh*.685,r=Math.max(2,hh*.063);
+    const g=cx.createRadialGradient(fx,fy,0,fx,fy,r);
+    g.addColorStop(0,`rgba(235,110,42,${ember*.55})`);
+    g.addColorStop(1,'rgba(235,110,42,0)');
+    cx.fillStyle=g;cx.fillRect(fx-r,fy-r,r*2,r*2);
   }
+  cx.restore();
 }
 // dread: a low drone that swells as it gets close (path distance), and the lantern hand shakes
 let dreadV=0;
@@ -2376,6 +2463,45 @@ function followingStep(o,last){
   noise(last?.25:.16,near?220:135,1.1,last?.31:.19,'lowpass',t,pan);
   const scuff=(last?.13:.05)*(near?1:.45);
   noise(last?.32:.12,near?950:560,2,scuff,'bandpass',t+.04,pan);
+}
+const BOOT_SOUNDS={
+  searcher:{weight:1,pitch:1,scuff:1.1},
+  ada:{weight:.78,pitch:1.16,scuff:.62},
+  caleb:{weight:1.18,pitch:.85,scuff:.85},
+  inez:{weight:.88,pitch:1.08,scuff:1.22}
+};
+const FOOTSTEP_SURFACES={
+  wood:{impact:275,scuff:820,weight:1,duration:.13,tail:.45},
+  rug:{impact:185,scuff:680,weight:.61,duration:.083,tail:.19},
+  stone:{impact:390,scuff:1700,weight:.92,duration:.10,tail:.56},
+  earth:{impact:220,scuff:1200,weight:.73,duration:.12,tail:.48}
+};
+const manorTiled=room=>room?.prop==='range'||room?.prop==='planter';
+const manorCarpetEdge=(x,y,b)=>Math.min(x-b[0]-1.05,b[2]+.1-x,y-b[1]-.8,b[3]+.12-y);
+const blueHouseRug=(x,y)=>x>29.45&&x<33.2&&y>27.3&&y<30.15;
+function floorUnderfoot(x,y){
+  const ix=x|0,iy=y|0;
+  if(manor){
+    const room=manor.rooms[manor.tiles[ix+iy*S]-1];
+    if(manorTiled(room))return 'stone';
+    return room?.bounds&&manorCarpetEdge(x,y,room.bounds)>0?'rug':'wood';
+  }
+  if(morning){
+    if(blueHouseRug(x,y))return 'rug';
+    if((ix>=4&&ix<8&&iy>=2&&iy<=4)||(ix>=28&&ix<34&&iy>=26&&iy<=30)||
+       (ix>=28&&ix<30&&iy>=57&&iy<=59))return 'wood';
+    if(ix>=31&&ix<38&&iy>=47&&iy<=50)return 'stone';
+    return 'earth';
+  }
+  return (floor-1)%4===3?'wood':'stone';
+}
+function playerFootstep(){
+  if(!A)return;
+  const boot=BOOT_SOUNDS[save.character],surface=FOOTSTEP_SURFACES[floorUnderfoot(P.x,P.y)];
+  const strength=(running?.22:.13)*boot.weight*surface.weight;
+  const variation=.93+Math.random()*.14,t=A.currentTime;
+  noise(surface.duration,surface.impact*boot.pitch*variation,1.35,strength,'lowpass',t);
+  noise(surface.duration*.68,surface.scuff*boot.pitch*variation,2.3,strength*surface.tail*boot.scuff,'bandpass',t+.027);
 }
 function updateFollower(dt,stepped,walking,entityDistance){
   if(ghost){ghost.life-=dt;if(ghost.life<=0)ghost=null}
@@ -3669,10 +3795,12 @@ function update(dt){
   if(!solid(nx+Math.sign(nx-P.x)*r,P.y))P.x=nx;
   if(!solid(P.x,ny+Math.sign(ny-P.y)*r))P.y=ny;
   moving=Math.hypot(f,s)>.1;
-  walking=Math.hypot(P.x-ox,P.y-oy)>dt*.15;
+  const travel=Math.hypot(P.x-ox,P.y-oy);
+  walking=travel>dt*.15;
+  if(!morning)updateLanternMotion(dt,travel);
   if(running&&walking)loudCoverUntil=timeIn+.45;
   if(morning){
-    if(walking){walkPh+=dt*9;stepT-=dt;if(stepT<=0){stepT=.43;noise(.10,620,1.2,.10,'lowpass')}}
+    if(walking){walkPh+=dt*9;stepT-=dt;if(stepT<=0){stepT=.43;playerFootstep()}}
     const targetBob=walking?Math.sin(walkPh)*H*.008:0;
     bob+=(targetBob-bob)*Math.min(1,dt*12);
     updateMorning(dt,push);return;
@@ -3695,7 +3823,15 @@ function update(dt){
     stair.watch.entered=true;say("The Keeper's Watch",3);
   }
   let stepped=false;
-  if(moving){walkPh+=dt*(running?14:9);stepT-=dt;if(stepT<=0){stepT=running?.27:.42;noise(.09,420,1.2,running?.26:.14,'lowpass');stepped=walking}}  bob=Math.sin(walkPh)*H*.012;
+  if(moving){
+    walkPh+=dt*(running?14:9);stepT-=dt;
+    if(stepT<=0){
+      stepT=running?.27:.42;
+      stepped=walking;
+      if(stepped)playerFootstep();
+    }
+  }
+  bob=Math.sin(walkPh)*H*.012;
 
   // light: battery + flicker
   if(light.on&&blackout?.stage!=='dark')light.bat=Math.max(0,light.bat-dt*(nightmare?.46:easy?.22:.32)*(character.drain??1));
@@ -3986,7 +4122,9 @@ function update(dt){
   const a=actionHere(),lbl=a?a.label:'';
   if(lbl!==actNow){actNow=lbl;$('act').textContent=lbl;$('act').style.display=lbl?'block':'none'}
   $('sig').textContent=sigils.map(x=>x.got?'●':'○').join('');
-  $('batf').style.width=light.bat+'%';
+  const chargeBar=$('batf');
+  chargeBar.style.width=light.bat+'%';
+  chargeBar.toggleAttribute('data-low',light.bat>0&&light.bat<20);
   $('stf').style.width=stamina+'%';$('stf').classList.toggle('out',winded);
   joyDraw(push);
   $('inv').textContent=`STONES ${'●'.repeat(stones)}${'○'.repeat(Math.max(0,(easy?5:3)-stones))}${hasKey?' · KEY':''} · WISP ${'✦'.repeat(bursts)||'–'}${stair?.watch.carrying?" · MARA'S LAMP":''}${nightmare?' · NIGHTMARE':easy?' · EASY':''}`;
@@ -4422,7 +4560,11 @@ function actorPose(o,t){
   const bendRate=o.windup>0?9:7;
   pose.bend+=((o.bend?1:0)-pose.bend)*Math.min(1,dt*bendRate);
   pose.brace+=((o.braceYaw!=null?1:0)-pose.brace)*Math.min(1,dt*13);
-  if(moving)pose.phase+=d*(o.t==='crawl'?21:o.t==='doll'?22:14);
+  if(moving){
+    const cadence=o.t==='friend'?PLAYER_MODELS[playerId(o.character)].cadence/(o.rn?1.35:1):
+      o.t==='crawl'?21:o.t==='doll'?22:14;
+    pose.phase+=d*cadence;
+  }
   pose.x=o.x;pose.y=o.y;pose.t=t;
   return pose;
 }
@@ -4563,41 +4705,152 @@ const HUMAN_COLORS={
   friend:{cloth:[72,92,109],dress:[62,64,63],fold:[125,126,111],skin:[176,132,103],hair:[60,54,48],shade:[82,68,57],boot:[55,46,38]},
   doll:{cloth:[177,152,103],dress:[151,127,83],fold:[191,165,116],skin:[212,197,174],hair:[134,116,82],shade:[172,146,100],boot:[92,82,69]}
 };
-const PLAYER_MODELS=Object.fromEntries(Object.entries(PLAYERS).map(([id,p])=>[id,{
-  ...HUMAN_COLORS.friend,cloth:p.color,skin:p.skin,hair:p.hair,
-  fold:p.color.map(value=>Math.round(value*.72)),detail:p.detail
-}]));
-const PLAYER_COAT_HEM=ringMesh([[-1,0],[-1,1],[-.58,.99],[.55,.80],[1,.72],[1,0]],10);
-const PLAYER_CAPE=ringMesh([[-1,0],[-1,1],[-.50,.94],[.62,.68],[1,.38],[1,0]],12,
-  (angle,z,r)=>[Math.cos(angle)*r,Math.sin(angle)*r,z+.08*Math.cos(angle*3)*(1-z)]);
-const PLAYER_LEATHER=[87,58,38,.16],PLAYER_BUTTON=[159,113,62,.18];
-function playerOutfit(c,lean,breath,step,form,limb){
-  if(c.detail==='scarf'){
-    form(PLAYER_COAT_HEM,0,-.018,.403,.151,.099,.124,c.cloth,step*.08);
-    form(ACTOR_ROUND,0,.031,.742+breath,.075,.076,.026,[183,123,104]);
-    form(ACTOR_CLOTH,-.035,.104,.66+breath,.024,.012,.075,[166,102,88],-.15+step*.09);
-    for(const z of [.44,.50,.56,.62])form(ACTOR_ROUND,.023,.091+lean*.3,z,.009,.007,.009,PLAYER_BUTTON);
-    return;
+const PLAYER_HEAD=ringMesh(
+  [[-1,0],[-.96,.42],[-.79,.67],[-.52,.83],[-.27,.93],[.02,1],[.31,.98],[.62,.92],[.86,.67],[1,0]],20,
+  (a,z,r)=>[r*Math.cos(a),r*Math.sin(a)*(Math.sin(a)>0&&z<-.2?.86:1),z]);
+const PLAYER_JACKET=ringMesh(
+  [[-1,0],[-1,.95],[-.77,1],[-.28,.82],[.23,.85],[.67,1],[.86,.97],[1,.57],[1,0]],18,
+  (a,z,r)=>[r*Math.cos(a)*(1+.028*Math.cos(a*7+z*2)),r*Math.sin(a),z]);
+const PLAYER_HEM=ringMesh(
+  [[-1,0],[-1,1],[-.62,.93],[.2,.81],[1,.75],[1,0]],18,
+  (a,z,r)=>[r*Math.cos(a)*(1+.07*Math.cos(a*8)),r*Math.sin(a)*(1+.07*Math.cos(a*8)),z+(r?.065*Math.cos(a*3)*(1-z):0)]);
+const PLAYER_CAPE=ringMesh(
+  [[-1,0],[-1,1],[-.57,.93],[.27,.82],[.68,.73],[1,.39],[1,0]],20,
+  (a,z,r)=>[r*Math.cos(a)*(1+.075*Math.cos(a*7)),r*Math.sin(a)*(1+.07*Math.cos(a*7)),z+(r?.12*Math.sin(a)*(1-z):0)]);
+const PLAYER_MODELS={
+  searcher:{shoulder:.144,face:[.071,.067,.098],head:.858,coat:[97,108,69],trim:[68,77,50],pants:[75,67,54],iris:[83,72,46],
+    cadence:10.8,stride:.135,lift:.064,bob:.019,lean:.036,arm:.104,lantern:.024},
+  ada:{shoulder:.123,face:[.064,.064,.094],head:.859,coat:[118,52,63],trim:[77,37,47],pants:[57,53,58],iris:[72,48,35],
+    cadence:13,stride:.106,lift:.042,bob:.009,lean:.018,arm:.068,lantern:.012},
+  caleb:{shoulder:.158,face:[.075,.068,.100],head:.879,coat:[60,86,112],trim:[43,61,80],pants:[56,61,62],iris:[72,95,98],
+    cadence:9.8,stride:.148,lift:.074,bob:.022,lean:.052,arm:.138,lantern:.031},
+  inez:{shoulder:.123,face:[.068,.065,.094],head:.851,coat:[146,105,54],trim:[92,62,33],pants:[72,57,53],iris:[85,65,40],
+    cadence:14,stride:.103,lift:.058,bob:.015,lean:.029,arm:.088,lantern:.017}
+};
+function playerCloth(color){
+  const size=64,pixels=new Uint8ClampedArray(size*size*4);
+  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+    const index=(x+y*size)*4;
+    const grain=(hash(x,y,51)-.5)*20;
+    const weave=((x+y)%4<2?2:-2)+Math.sin(x*.63+y*.18)*3;
+    const wear=6*Math.sin(x*.27+y*.10)+4*Math.cos(y*.41-x*.23);
+    for(let channel=0;channel<3;channel++)pixels[index+channel]=color[channel]+grain+weave+wear;
+    pixels[index+3]=255;
   }
-  if(c.detail==='cap'){
-    for(const side of [-1,1]){
-      form(ACTOR_BRICK,side*.079,.086,.620+breath,.042,.012,.036,c.fold);
-      form(ACTOR_BRICK,side*.079,.099,.645+breath,.047,.009,.010,c.cloth);
-      form(ACTOR_BRICK,side*.115,.014,.733+breath,.035,.046,.010,c.fold);
+  const material=[...color,0,undefined,.82];
+  material.texture={data:pixels,stride:size,x:0,y:0,last:size-1};
+  return material;
+}
+for(const model of Object.values(PLAYER_MODELS)){
+  for(const part of ['coat','trim','pants'])model[part]=playerCloth(model[part]);
+}
+const PLAYER_LEATHER=[69,46,32],PLAYER_BRASS=[164,122,70],PLAYER_STITCH=[128,105,78],PLAYER_SOLE=[34,29,27];
+function playerMesh(o,pose,t,form,limb){
+  const id=playerId(o.character),p=PLAYERS[id],m=PLAYER_MODELS[id];
+  const pace=Math.min(1,pose.speed),sprint=o.rn?pace:0,phase=pose.phase;
+  const step=Math.sin(phase)*pace,lag=Math.sin(phase-.8)*pace;
+  const breath=.005*Math.sin(t*2.6)+Math.cos(phase*2)*m.bob*pace*(1+sprint*.4);
+  const lean=pace*m.lean+sprint*.055,shoulder=m.shoulder,body=.610+breath;
+  const stride=m.stride*(1+sprint*.35),liftHeight=m.lift*(1+sprint*.5);
+  const lanternWrist=[.129+lag*.008,.164+lean*.62+lag*m.lantern,.545+breath+step*m.lantern*.65];
+  const long=id==='ada',cape=id==='inez',cap=id==='caleb';
+  form(PLAYER_JACKET,step*.009,lean,body,shoulder,.087,.151,m.coat,step*.046,0,sprint*.12);
+  if(long)form(PLAYER_HEM,0,-.009,.419+breath*.3,.151,.094,.144,m.coat,.093*lag,0,-sprint*.12);
+  else if(!cape)form(PLAYER_HEM,0,-.002,.487,.119,.081,.052,m.coat,.065*step);
+  for(const side of [-1,1]){
+    const swing=side*step,lift=Math.max(0,-side*Math.cos(phase))*pace*liftHeight;
+    const knee=[side*.067,swing*stride*.57+.014,.274+lift*.47];
+    const ankle=[side*.064,swing*stride,.079+lift];
+    limb([side*.068,0,.479],knee,.046,m.pants);
+    limb(knee,ankle,.035,m.pants);
+    form(ACTOR_ROUND,ankle[0],ankle[1]+.029,ankle[2]-.046,.039,.068,.016,PLAYER_SOLE);
+    form(ACTOR_ROUND,ankle[0],ankle[1]+.032,ankle[2]-.026,.036,.063,.025,PLAYER_LEATHER);
+    form(ACTOR_ROUND,ankle[0],ankle[1],ankle[2]+.020,.034,.036,.050,PLAYER_LEATHER);
+    const top=[side*shoulder*.93,lean,.701+breath];
+    const elbow=[side*(shoulder+.028),side===1?.031+lean*.4:-swing*m.arm*.5,.574+breath];
+    const wrist=side===1?lanternWrist:[-shoulder-.033,-swing*m.arm*(1+sprint*.55),.448+breath+sprint*.07];
+    limb(top,elbow,.041,m.coat);
+    limb(elbow,wrist,.034,cape?m.trim:m.coat);
+    const cuff=wrist.map((v,i)=>v*.84+elbow[i]*.16);
+    form(ACTOR_ROUND,...cuff,.034,.035,.024,m.trim,side*.15);
+    form(ACTOR_ROUND,...wrist,.023,.028,.029,p.skin);
+    form(ACTOR_ROUND,wrist[0]-side*.017,wrist[1]+.012,wrist[2]+.006,.011,.015,.017,p.skin);
+    if(!cape){
+      form(ACTOR_CLOTH,side*.040,.077,.670+breath,.025,.015,.058,m.trim,-side*.44);
+      if(!long)limb([side*.052,.089,.535],[side*.106,.077,.532],.005,m.trim);
     }
-    form(ACTOR_BRICK,0,0,.472,.114,.091,.021,[52,49,42]);
-    return;
   }
-  if(c.detail==='braid'){
-    form(PLAYER_CAPE,0,-.035,.565+breath,.211,.102,.198,c.cloth,step*.07,0,-.11);
-    form(ACTOR_ROUND,0,.069,.727+breath,.081,.048,.028,c.fold);
-    form(ACTOR_ROUND,.009,.117,.713+breath,.014,.009,.015,PLAYER_BUTTON);
-    return;
+  if(cape){
+    form(PLAYER_CAPE,lag*.013,-.025+lean*.35,.610+breath,.202,.125,.160,m.coat,.088+lag*.20,0,-sprint*.17);
+    form(ACTOR_ROUND,0,.047,.726+breath,.086,.051,.024,m.trim);
+    form(ACTOR_ROUND,.023,.107,.709+breath,.016,.007,.016,PLAYER_BRASS);
+    limb([-.034,.099,.706],[.018,.112,.706],.005,PLAYER_STITCH);
+  }else if(long){
+    const scarf=[173,138,109];
+    form(ACTOR_ROUND,0,.024,.743+breath,.073,.069,.031,scarf);
+    form(ACTOR_CLOTH,-.033+lag*.013,.102+lean,.651+breath,.027,.014,.078,scarf,-.16+lag*.21,0,-sprint*.16);
+    form(ACTOR_CLOTH,-.053+lag*.020,.099+lean,.610+breath,.009,.017,.048,[125,101,86],-.16+lag*.24);
+  }else if(cap){
+    for(const side of [-1,1]){
+      form(ACTOR_BRICK,side*.082,.080,.611,.033,.009,.043,m.trim);
+      form(ACTOR_BRICK,side*.082,.085,.642,.034,.009,.011,m.coat);
+      form(ACTOR_ROUND,side*.081,.097,.636,.007,.005,.007,PLAYER_BRASS);
+    }
+  }else{
+    const swing=lag*.033,z=.421+breath*.7+Math.abs(lag)*.014;
+    limb([-.112,.048+lean,.725+breath],[.131,.097+swing,z+.029],.012,PLAYER_LEATHER);
+    limb([-.112,-.038+lean,.726+breath],[.131,-.078+swing,z+.029],.012,PLAYER_LEATHER);
+    form(ACTOR_BRICK,.145,-.012+swing,z,.047,.051,.067,PLAYER_LEATHER,.15*lag);
+    form(ACTOR_CLOTH,.148,.037+swing,z+.026,.048,.012,.031,PLAYER_STITCH);
+    form(ACTOR_ROUND,.150,.050+swing,z+.014,.008,.005,.008,PLAYER_BRASS);
   }
-  limb([-.102,.072,.724+breath],[.144,.098,.471],.017,PLAYER_LEATHER);
-  form(ACTOR_BRICK,.151,-.022,.412,.063,.075,.070,PLAYER_LEATHER,step*.07);
-  form(ACTOR_BRICK,.153,.049,.452,.063,.014,.026,c.fold,step*.07);
-  form(ACTOR_ROUND,.153,.064,.433,.012,.008,.011,PLAYER_BUTTON);
+  if(!cape)for(const z of [.455,.508,.561,.614]){
+    form(ACTOR_ROUND,.012,.087+lean,z,.007,.005,.007,PLAYER_BRASS);
+  }
+  const flame=o.l?[...hexRgb(o.c),.93]:[65,53,40];
+  const [handX,handY,handZ]=lanternWrist;
+  const lampX=handX-.003+lag*.018,lampY=handY+.023+step*.015,lampZ=handZ-.070;
+  limb([handX,handY+.020,handZ-.012],[lampX,lampY,lampZ+.041],.009,PLAYER_BRASS);
+  form(ACTOR_BRICK,lampX,lampY,lampZ,.031,.031,.046,PLAYER_LEATHER,.11*lag);
+  form(ACTOR_BRICK,lampX,lampY+.007,lampZ,.025,.029,.028,flame,.11*lag);
+  for(const side of [-1,1]){
+    form(ACTOR_BRICK,lampX+side*.022,lampY+.028,lampZ,.004,.005,.037,PLAYER_LEATHER,.11*lag);
+    form(ACTOR_BRICK,lampX,lampY+.003,lampZ+side*.034,.032,.032,.007,PLAYER_BRASS,.11*lag);
+  }
+  const z=m.head+breath,y=.018+lean,[rx,ry,rz]=m.face;
+  const hair=p.hair,skin=p.skin;
+  form(ACTOR_ROUND,0,y-.002,z-.108,.032,.034,.051,skin);
+  form(PLAYER_HEAD,0,y,z,rx,ry,rz,skin);
+  form(ACTOR_ROUND,0,y-.030,z+.025,rx*1.08,.066,.087,hair);
+  form(ACTOR_ROUND,-.024,y+.003,z+.069,rx*.82,.067,.037,hair,-.19);
+  if(cap){
+    form(PLAYER_HEAD,0,y-.007,z+.083,.085,.080,.037,m.trim);
+    form(ACTOR_ROUND,0,y+.070,z+.065,.080,.043,.010,m.trim,-.06);
+    form(ACTOR_ROUND,0,y-.005,z+.120,.010,.011,.007,m.coat);
+  }else if(long){
+    form(ACTOR_ROUND,.056,y-.046,z-.003,.037,.041,.044,hair);
+    form(ACTOR_ROUND,-.043,y+.032,z+.053,.038,.030,.039,hair,-.29);
+  }else if(cape){
+    for(let i=0;i<5;i++){
+      const x=.038+i*.014,w=.024-i*.002;
+      form(ACTOR_ROUND,x+lag*i*.004,y-.071+i*(.013-sprint*.007),z-.037-i*.036,w,.024,.029,hair,(i%2?.44:-.39)+lag*.17);
+    }
+    form(ACTOR_ROUND,.100+lag*.020,y-.021-sprint*.035,z-.199,.012,.016,.011,[136,80,57]);
+  }else{
+    form(ACTOR_ROUND,-.051,y-.010,z+.037,.029,.053,.059,hair,-.34);
+    form(ACTOR_ROUND,.041,y+.023,z+.064,.038,.047,.035,hair,.36);
+  }
+  for(const side of [-1,1]){
+    const x=side*rx*.46,eyeY=y+ry*.87;
+    form(ACTOR_ROUND,side*rx,y-.001,z-.010,.013,.018,.022,skin);
+    form(ACTOR_ROUND,x,eyeY,z+.007,.013,.006,.007,[103,75,65],side*.06);
+    form(ACTOR_ROUND,x,eyeY+.005,z+.007,.0095,.0035,.004,[156,133,116]);
+    form(ACTOR_ROUND,x,eyeY+.008,z+.007,.0049,.003,.0051,m.iris);
+    form(ACTOR_ROUND,x,eyeY+.010,z+.007,.0026,.002,.003,[30,25,23]);
+    form(ACTOR_ROUND,x,eyeY-.001,z+.025,.015,.005,.004,hair,side*.12);
+  }
+  form(ACTOR_ROUND,0,y+ry*.94,z-.006,.010,.012,.021,skin);
+  form(ACTOR_ROUND,0,y+ry*.83,z-.039,.017,.004,.003,[105,61,58]);
 }
 const actorPaint=(rgb,patch,mix=.85,front=false)=>[...rgb,0,patch,mix,front];
 for(const [row,kind] of ['mara','nell','papa','doll'].entries()){
@@ -4894,7 +5147,7 @@ function manorFurnitureMesh(o,form,t){
   }
 }
 function humanMesh(o,pose,t,form,limb){
-  const kind=o.t,c=kind==='friend'?PLAYER_MODELS[playerId(o.character)]:HUMAN_COLORS[kind];
+  const kind=o.t,c=HUMAN_COLORS[kind];
   const child=kind==='mara'||kind==='doll',doll=kind==='doll',skirt=child||kind==='nell';
   const chained=kind==='papa'&&o.st==='chained';
   const heldDoll=doll?pose.held:null;
@@ -4933,7 +5186,7 @@ function humanMesh(o,pose,t,form,limb){
     limb(knee,foot,.030,doll?DOLL_GLOVE:skirt?c.skin:c.dress);
     form(ACTOR_ROUND,foot[0],foot[1]+.030,foot[2]-.007,.034,.066,.033,c.boot);
     const armTop=[side*shoulder,lean*.62,.692+breath];
-    const held=kind==='nell'||chained||kind==='friend'&&side===1;
+    const held=kind==='nell'||chained;
     const elbow=[side*(shoulder+.033),-swing*.053+(held?.043:0),.552+breath];
     const wrist=held?[side*(kind==='nell'?.076:.096),.148,.552]:
       [side*(shoulder+.038),-swing*.099+(side===1?reach:0)+sway,.438+(side===1?reach*.74:0)];
@@ -4986,12 +5239,6 @@ function humanMesh(o,pose,t,form,limb){
     form(ACTOR_ROUND,0,.155,.582,.048,.043,.011,[88,121,138]);
     limb([.034,.177,.537],[.096,.196,.573],.015,[82,120,141]);
   }
-  if(kind==='friend'){
-    const lantern=o.l?[...hexRgb(o.c),.96]:[87,70,53];
-    form(ACTOR_BRICK,.103,.159,.555,.036,.037,.057,[63,55,48]);
-    form(ACTOR_BRICK,.103,.163,.551,.029,.031,.037,lantern);
-    playerOutfit(c,lean,breath,step,form,limb);
-  }
   form(ACTOR_ROUND,...neck,.040,.039,.053,c.skin);
   const headDepth=.012+lean,headWidth=child?.079:.076;
   const headRoll=angry?.28+hitch*.17:doll&&(heldDoll?.warning??o.warn)?.14:0;
@@ -5018,11 +5265,6 @@ function humanMesh(o,pose,t,form,limb){
     headForm(ACTOR_ROUND,tilt-.058,headDepth+.011,headZ+.046,.040,.062,.075,c.hair);
     for(let i=0;i<4;i++)headForm(ACTOR_ROUND,.066+i*.006,headDepth+.022+i*.008,headZ-.010-i*.047,.025-i*.003,.025,.043,c.hair);
     headForm(ACTOR_ROUND,.087,headDepth+.051,headZ-.166,.016,.019,.019,[118,73,61]);
-  }else if(c.detail==='cap'){
-    headForm(ACTOR_ROUND,0,headDepth-.014,headZ+.089,.100,.082,.036,c.fold);
-    headForm(ACTOR_BRICK,0,headDepth+.068,headZ+.065,.090,.045,.009,c.fold);
-  }else if(c.detail==='braid'){
-    for(let i=0;i<5;i++)headForm(ACTOR_ROUND,.063+i*.006,headDepth-.057,headZ-.034-i*.039,.025,.026,.036,c.hair);
   }else if(kind==='nell'){
     headForm(ACTOR_ROUND,.028,headDepth-.075,headZ-.028,.048,.033,.044,c.shade);
   }else if(doll){
@@ -5225,36 +5467,65 @@ function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   else if(o.t==='crawl')crawlerMesh(o,pose,t,form,limb);
   else if(o.t==='mobile')nurseryMobileMesh(t,form,limb);
   else if(o.t==='pet')wispMesh(o,t,form);
+  else if(o.t==='friend')playerMesh(o,pose,t,form,limb);
   else humanMesh(o,pose,t,form,limb);
 }
 
 let characterPreviewAngle=Math.PI-.43;
-function drawCharacterPreview(){
+let characterWalkStart=null;
+function drawCharacterPreview(now=performance.now()){
   const canvas=$('characterPreview');
   if(!canvas)return;
+  const time=characterWalkStart===null?0:(now-characterWalkStart)/1000;
+  const cadence=PLAYER_MODELS[save.character].cadence;
   const context=canvas.getContext('2d'),width=canvas.width,height=canvas.height;
   const preview=context.createImageData(width,height);
   const previous=[W,H,WS,buf,zbuf,cone,objectDepth];
   try{
-    W=width;H=height;WS=width/1.32;
+    W=width;H=height;WS=height*1.04;
     buf=new Uint32Array(preview.data.buffer);
     zbuf=new Float32Array(width).fill(Infinity);
     cone=new Float32Array(width);
     objectDepth=new Float32Array(width*height);
-    drawActor({t:'friend',character:save.character,c:'#ffc178',l:true},0,1.18,height*.48,1,
-      {yaw:characterPreviewAngle,phase:0,speed:0},0,.87,0,{a:0});
+    drawActor({t:'friend',character:save.character,c:'#ffc178',l:true},0,1.26,height*.49,time+1,
+      {yaw:characterPreviewAngle,phase:time*cadence*.72,speed:characterWalkStart===null?0:.8},0,.87,0,{a:0});
   }finally{
     [W,H,WS,buf,zbuf,cone,objectDepth]=previous;
   }
   context.putImageData(preview,0,0);
   const player=PLAYERS[save.character];
-  canvas.setAttribute('aria-label',`3D preview of ${player.name}. Drag or use the arrow keys to turn.`);
-  $('characterOutfit').textContent=player.coat;
-  $('characterPerk').textContent=player.perk;
+  if(canvas.dataset.previewCharacter!==save.character){
+    canvas.dataset.previewCharacter=save.character;
+    canvas.setAttribute('aria-label',`3D preview of ${player.name}. Drag or use the arrow keys to turn.`);
+    $('characterOutfit').textContent=player.coat;
+    $('characterPerk').textContent=player.perk;
+  }
 }
 function bindCharacterPreview(){
-  const canvas=$('characterPreview');
+  const canvas=$('characterPreview'),walk=$('characterWalk');
   let drag=null;
+  let frame=0,lastDraw=0;
+  characterWalkStart=null;
+  function animate(now){
+    if(!canvas.isConnected)return;
+    if($('ui').style.display==='none'||characterWalkStart===null){
+      characterWalkStart=null;
+      walk.textContent='Show walk';
+      walk.setAttribute('aria-pressed','false');
+      return;
+    }
+    if(now-lastDraw>=40){drawCharacterPreview(now);lastDraw=now}
+    frame=requestAnimationFrame(animate);
+  }
+  walk.onclick=()=>{
+    const playing=characterWalkStart===null;
+    characterWalkStart=playing?performance.now():null;
+    walk.textContent=playing?'Stop walk':'Show walk';
+    walk.setAttribute('aria-pressed',String(playing));
+    cancelAnimationFrame(frame);
+    drawCharacterPreview();
+    if(playing)frame=requestAnimationFrame(animate);
+  };
   canvas.onpointerdown=e=>{drag=e.clientX;canvas.setPointerCapture(e.pointerId)};
   canvas.onpointermove=e=>{
     if(drag===null)return;
@@ -5315,10 +5586,10 @@ function render(t){
       const roomId=manor&&ix>=0&&ix<S&&iy>=0&&iy<S?manor.tiles[ix+iy*S]:0;
       if(manor){
         const room=manor.rooms[roomId-1],bounds=room?.bounds;
-        const tiled=room?.prop==='range'||room?.prop==='planter';
+        const tiled=manorTiled(room);
         let tex=fl?(tiled?MANOR_TILE:MANOR_TIMBER):MANOR_CEILING,detail=fl?2.82:1.96;
         if(fl&&bounds&&!tiled){
-          const edge=Math.min(fx-bounds[0]-1.05,bounds[2]+.1-fx,fy-bounds[1]-.8,bounds[3]+.12-fy);
+          const edge=manorCarpetEdge(fx,fy,bounds);
           if(edge>0){
             tex=MANOR_CARPET;
             if(edge<.21)detail*=edge>.045&&edge<.125?1.48:.72;
@@ -5333,7 +5604,7 @@ function render(t){
         buf[row+x]=px32(122*k*lr|0,91*k*lg|0,69*k*lb|0);
       }else if(morning&&ix>=28&&ix<34&&iy>=26&&iy<=30){
         const seam=(fx*4)%1<.047,grain=hash(fx*53|0,fy*18|0,16),k=(seam?.73:1)*(.86+.14*grain);
-        const rug=fl&&fx>29.45&&fx<33.2&&fy>27.3&&fy<30.15;
+        const rug=fl&&blueHouseRug(fx,fy);
         const edge=rug&&(fx<29.58||fx>33.06||fy<27.42||fy>30.03);
         const weave=rug&&((fx*10)%1<.19||(fy*12)%1<.16)?k*.91:k;
         buf[row+x]=edge?px32(144*weave|0,102*weave|0,73*weave|0):rug?px32(114*weave|0,64*weave|0,54*weave|0):
@@ -5657,7 +5928,7 @@ function render(t){
     for(const m of motes){m.x+=m.vx*.016;m.y+=m.vy*.016+Math.sin(t*.7+m.p)*.0006;if(m.x<.2||m.x>.8)m.vx*=-1;if(m.y<.25)m.y=.8;if(m.y>.85)m.y=.3;
       const x=m.x*W,y=m.y*H,r=m.r*W/400,f=1-Math.min(1,Math.abs(m.x-.5)*2.6);cx.fillStyle=`rgba(${c},${a*f*(.5+.5*Math.sin(t*2+m.p))})`;cx.beginPath();cx.arc(x,y,r,0,7);cx.fill()}
     cx.globalCompositeOperation='source-over'}
-  if(!morning)drawHand();
+  if(!morning)drawHand(t);
   else if(morning.orchard.state==='carrying'||morning.crossing.state==='carrying'){
     const x=W*.77+bob*.44,y=H*.98+bob*.32,r=H*.32;
     const light=cx.createRadialGradient(x,y,0,x,y,r);
@@ -6355,7 +6626,7 @@ function menu(head,btn){
   ui.innerHTML=head+`
   <p class="warn">Loud sounds and sudden flashing images. Headphones make it worse.</p>
   <fieldset class="characterPicker"><legend>Choose a character</legend>
-  <div class="characterPreview"><canvas id="characterPreview" width="240" height="160" role="img" tabindex="0"></canvas></div>
+  <div class="characterPreview"><canvas id="characterPreview" width="480" height="300" role="img" tabindex="0"></canvas><button id="characterWalk" type="button" aria-pressed="false">Show walk</button></div>
   <p class="characterOutfit" id="characterOutfit"></p><p class="characterPerk" id="characterPerk"></p><div class="characterChoices">
     ${Object.entries(PLAYERS).map(([id,player])=>`<button type="button" data-character="${id}" aria-pressed="${save.character===id}" title="${player.coat}"><i aria-hidden="true" style="background:rgb(${player.color})"></i>${player.name}</button>`).join('')}
   </div></fieldset>
