@@ -289,6 +289,8 @@ const MANOR_SIGILS=[
   {x:23.25,y:5.6,room:6}
 ];
 const MANOR_LIBRARY_CLUE=MANOR_ROOMS.findIndex(room=>room.name==='Library');
+const GLASSHOUSE_TAG_NOTE="<p>The zinc label reads <i>BUTTON</i>. The letters are cut deep enough to catch your nail. On the back, in Mara’s handwriting:</p><p>‘When it rains, Nell can’t hear me at the front door. She says to hold Button up to the glass. She’ll know it’s me by his one good eye.’</p>";
+const NELL_GLASSHOUSE_NOTE="<p>Nell turns the label over and rubs a thumb across Mara’s letters. ‘She tried waving the first time. All I could see through the rain was a hand. Then she lifted Button. His good eye caught the kitchen lamp.’</p><p>Mara sets the rabbit beside the label on the sill. Nell pulls her chair a little closer to the window. ‘You can knock on the door now,’ she says. ‘I’ll leave it unlatched.’</p>";
 const MANOR_STUDY={
   name:'The Keeper’s Study',bounds:[9,25,10,28],clue:[9.8,27.02],prop:'desk',color:[69,65,65],
   title:'The night he locked the cellar',body:"I locked the cellar after the third knock. I thought the thing that learned her voice was on the other side. When I went upstairs, Mara’s chair was empty. If the girl knocks again, ask her what she drew beside the stairs. I taught her to draw the rabbit’s missing eye as a cross. She picked the same mark for the third bell."
@@ -318,7 +320,10 @@ const WATCH_BIRD_NOTE="<p>You hold the bird in front of the lamp. Three pinprick
 const SHUTTER_LEDGER="<p>Nell kept a tally beside the window. ‘Shutter open at first light’ is written at the top. The first few mornings have notes beside them. ‘Mara waved.’ ‘Mara held up the rabbit.’ Then there are weeks of single pencil strokes.</p><p>The last entry says, ‘If she can still see me, she needs to know I’m looking.’</p>";
 const SHUTTER_ANSWER="<p>You push the shutter out. Across the road, the lamp in the watchroom comes into view. It’s at exactly the height of the little pencil line Nell drew across the sill.</p><p>Mara’s note was right. Nell opened the shutter so Mara could look across and see someone waiting. On the back of the shutter, where the rain couldn’t reach, Nell scratched a bird with its wings spread.</p>";
 const SHUTTER_REUNION="<p>When you tell Mara about the tally, she asks if Nell really wrote down the day she held up Button. Nell says, ‘I thought you were showing me his new eye.’</p><p>‘I was trying to make you laugh,’ Mara says. She folds a bird from the corner of Nell’s shopping list. ‘Can we put this in the front window? I want her to see what I was trying to show her.’</p>";
+const NELL_SILL_NOTE="<p>Under the lip of the sill, the paint is rubbed smooth in two places where Nell used to rest her elbows. At that height the old house’s watchroom comes into view. Below it, you can just make out the roof of the Glasshouse.</p><p>On the back of Nell’s tally, beside the morning Mara held up Button, there are two words you missed the first time: <i>She laughed.</i></p>";
+const MARA_SILL_REPLY="<p>‘I did laugh,’ Mara says. ‘Button’s ears were dripping. I squeezed one and it went straight down my sleeve.’</p><p>She props him against the glass with his good eye toward the street. ‘I used to look for her first. I didn’t know she was looking for me, too.’</p>";
 const WINDOW_BIRD="<p>You set the bird on the sill, wings toward the road. Mara stands beside you and holds Button up to the glass. This time she can hear Nell laugh from the table.</p>";
+const WINDOW_TOGETHER="<p>Button leans against the paper bird. From the road you’d see his good eye first, then the two paper wings.</p><p>Outside, someone sets a bucket down on the pavement. Mara starts to raise Button, then leaves him on the sill. She opens the front door and calls good morning.</p>";
 const BLUE_FINALE="<p>You tell them about the woman in the lamp glass. ‘She put her hand up like this?’ Mara asks. She covers Button’s good eye with her palm. ‘Mama did that when she was trying to see me in the dark.’</p><p>Nell goes to the front window and opens it a little. From the kitchen you can see the lamp at the fork and the paper bird on the sill. ‘Leave it open tonight?’ Mara asks.</p><p>‘Until you say otherwise,’ Nell says.</p>";
 const MANOR_CELLAR_NOTE="The marks on the wall are fresh. ‘I came down because the voice from the pipe knew Button’s name. If it calls again, I’ll ask it how he got his cross. Then I’ll know whether to answer.’ Below the words, a little arrow points toward the nursery.";
 const MANOR_CLUES=[...MANOR_ROOMS,MANOR_STUDY,MANOR_POTTING_ROOM,...MANOR_SERVICE_ROOMS,MANOR_POST];
@@ -584,6 +589,7 @@ function buildManor(){
   const lamps=rooms.map(r=>({x:r.clue.x-.60,y:r.clue.y+.32,t:'annexLamp',glow:r.prop==='planter'?'173,201,168':'255,177,92'}));
   const glasshouse=rooms.find(room=>room.prop==='planter');
   const windowLights=glasshouse?[19.5,22.5,25.5].map(x=>({x,y:glasshouse.bounds[1]+.36})):[];
+  const windowTag={x:24.34,y:3.28,t:'glasshouseTag'};
   lamps.push({x:12.55,y:16.8,t:'annexLamp'},{x:16.45,y:9.4,t:'annexLamp'},{x:13.65,y:2.7,t:'annexLamp'});
   for(const lamp of lamps)lamp.t='manorLantern';
   const furniture=rooms.map(r=>({x:r.clue.x,y:r.clue.y-.20,t:'manorFurniture',kind:r.prop}));
@@ -602,7 +608,7 @@ function buildManor(){
     {x:35.18,y:26.22,t:'manorFurniture',kind:'portrait'},{x:40.78,y:28.61,t:'manorFurniture',kind:'desk'}
   );
   const hearth=furniture.find(prop=>prop.kind==='hearth');
-  return {rooms,tiles,lamps,windowLights,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,study,potting,service,post,
+  return {rooms,tiles,lamps,windowLights,windowTag,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,study,potting,service,post,
     swings:[study.swing,potting.swing,service.swing,post.swing],active:-1,pin:null,mapRevision:0,route:null};
 }
 function newGame(fl,bat=100,tries=0){
@@ -812,6 +818,7 @@ function buildSprites(){
   if(cellarTrace)sprites.push(cellarTrace.note);
   if(manor){
     sprites.push(...manor.lamps,...manor.furniture,...manor.rooms.map(r=>r.clue));
+    sprites.push(manor.windowTag);
     sprites.push(...manor.frames.filter(frame=>!frame.door||frame.door.open));
     if(!manor.study.open)sprites.push(manor.study.shelf,...manor.study.books);
     if(!manor.potting.open)sprites.push(manor.potting.swing.panel,...manor.potting.buttons);
@@ -1407,6 +1414,10 @@ function actionHere(){
   if(manor){
     const {service,post}=manor;
     const near=(o,r)=>Math.hypot(P.x-o.x,P.y-o.y)<r&&los(P.x,P.y,o.x,o.y);
+    if(near(manor.windowTag,.92))return {label:save.glasshouseTag?'REREAD MARA’S PLANT LABEL':'READ THE PLANT LABEL',fn:()=>{
+      if(!save.glasshouseTag){save.glasshouseTag=true;store()}
+      openStory(`<b>The Glasshouse</b><h2>Button at the window</h2>${GLASSHOUSE_TAG_NOTE}`);
+    }};
     if(near(service.bell,.90))return {label:'RING THE SERVANTS’ BELL',fn:()=>{
       if(service.stage===0)advanceManorService(1);
       else say('The brass is still vibrating. The speaking tube is in the next room.',3);
@@ -3224,6 +3235,8 @@ function startMorning(atBlueHouse=false,atOrchard=false){
     pumpLog:{x:31.43,y:29.08,t:'manorNote',lift:.51},
     shutterPlace:{x:29.15,y:28.16,t:'blueChair'},
     birdSill:{x:32.06,y:26.16,t:'windowBird',lift:.64},
+    plantLabel:{x:31.66,y:26.19,t:'glasshouseTag',lift:.64},
+    buttonSill:{x:32.44,y:26.18,t:'sillRabbit',lift:.64},
     returnCup:{x:30.71,y:28.83,t:'returnCup',lift:.43},
     table:{x:31.72,y:29.16,t:'blueTable'},
     nell:{x:30.72,y:26.23,t:'nell'},
@@ -3431,6 +3444,8 @@ function startMorning(atBlueHouse=false,atOrchard=false){
   if(atBlueHouse&&save.nellPostLetter)sprites.push(upstream.postLetter);
   if(atBlueHouse&&save.nellPumpLog)sprites.push(upstream.pumpLog);
   if(atBlueHouse&&save.blueWindowBird)sprites.push(upstream.birdSill);
+  if(atBlueHouse&&save.nellGlasshouseTag)sprites.push(upstream.plantLabel);
+  if(atBlueHouse&&save.maraSillReply)sprites.push(upstream.buttonSill);
   if(atBlueHouse&&save.blueFinale)sprites.push(upstream.returnCup);
   if(save.crossingLit)Object.assign(crossing.lamp,{x:crossing.post.x,y:crossing.post.y});
   if(save.lookoutShutter){lookout.shutterOpen=true;grid[5][4]=10}
@@ -3473,12 +3488,18 @@ function morningAction(){
     openStory(`<b>Across the road</b><h2>Every morning</h2>${SHUTTER_LEDGER}`);
   }};
   if(insideLookout&&near(lookout.inside,.96))return {
-    label:lookout.shutterOpen?'LOOK TOWARD THE WATCHROOM':'OPEN NELL’S SHUTTER',
+    label:!lookout.shutterOpen?'OPEN NELL’S SHUTTER':
+      save.nellGlasshouseTag&&!save.nellSillMark?'LOOK FROM NELL’S PLACE AT THE SILL':'LOOK TOWARD THE WATCHROOM',
     fn:()=>{
       if(!lookout.shutterOpen){
         lookout.shutterOpen=true;grid[5][4]=10;save.lookoutShutter=true;store();
         if(morning.pin?.place==='lookout')morning.pin=null;
         noise(.37,340,2,.13,'bandpass',A.currentTime,panOf(lookout.inside));
+      }else if(save.nellGlasshouseTag&&!save.nellSillMark){
+        save.nellSillMark=true;store();
+        if(morning.pin?.place==='lookout')morning.pin=null;
+        openStory(`<b>Across the road</b><h2>Where Nell waited</h2>${NELL_SILL_NOTE}`);
+        return;
       }
       openStory(`<b>Across the road</b><h2>Someone was waiting</h2>${SHUTTER_ANSWER}`);
     }
@@ -3492,6 +3513,8 @@ function morningAction(){
     if(save.nellPostLetter)sprites.push(upstream.postLetter);
     if(save.nellPumpLog)sprites.push(upstream.pumpLog);
     if(save.blueWindowBird)sprites.push(upstream.birdSill);
+    if(save.nellGlasshouseTag)sprites.push(upstream.plantLabel);
+    if(save.maraSillReply)sprites.push(upstream.buttonSill);
     if(save.blueFinale)sprites.push(upstream.returnCup);
     const birds=yard.returned?'<p>Mara sets the two paper birds beside Nell’s cup so she can see them.</p>':'';
     const request='<p>She nods toward the back door. ‘Nell has a spare lamp. Will you help me leave it where the two paths meet?’</p>';
@@ -3515,7 +3538,21 @@ function morningAction(){
       openStory(`<b>The blue house</b><h2>Until you say otherwise</h2>${BLUE_FINALE}`);
     }};
   }
+  if(upstream.stage==='reunion'&&save.nellSillMark&&!save.maraSillReply&&near(upstream.buttonSill,.89)){
+    return {label:'TELL MARA WHAT NELL WROTE',fn:()=>{
+      save.maraSillReply=true;store();sprites.push(upstream.buttonSill);
+      if(morning.pin?.place==='blue')morning.pin=null;
+      openStory(`<b>The blue house</b><h2>Button’s good eye</h2>${MARA_SILL_REPLY}`);
+    }};
+  }
   if(upstream.stage==='reunion'&&save.shutterReunion&&near(upstream.birdSill,.94)){
+    if(save.blueWindowBird&&save.maraSillReply&&!save.windowTogether){
+      return {label:'STAND WITH MARA AT THE WINDOW',fn:()=>{
+        save.windowTogether=true;store();
+        if(morning.pin?.place==='blue')morning.pin=null;
+        openStory(`<b>The blue house</b><h2>Good morning</h2>${WINDOW_TOGETHER}`);
+      }};
+    }
     return {
       label:save.blueWindowBird?'LOOK AT THE WINDOW BIRD':'SET THE PAPER BIRD IN THE WINDOW',
       fn:()=>{
@@ -3536,6 +3573,14 @@ function morningAction(){
       save.nellPumpLog=true;store();sprites.push(upstream.pumpLog);
       openStory(`<b>The blue house</b><h2>All the way across</h2>${NELL_PUMP_LOG}<p>${CROSSING_DIRECTIONS}</p>`);
     }};
+    if(save.glasshouseTag&&!save.nellGlasshouseTag)return {label:'SHOW NELL MARA’S PLANT LABEL',fn:()=>{
+      save.nellGlasshouseTag=true;store();sprites.push(upstream.plantLabel);
+      openStory(`<b>The blue house</b><h2>The sign in the rain</h2>${NELL_GLASSHOUSE_NOTE}`);
+    }};
+  }
+  if(upstream.stage==='reunion'&&save.nellGlasshouseTag&&near(upstream.plantLabel,.68)){
+    return {label:'LOOK AT MARA’S PLANT LABEL',fn:()=>openStory(
+      `<b>The blue house</b><h2>The sign in the rain</h2>${NELL_GLASSHOUSE_NOTE}`)};
   }
   if(!crossing.gate.open&&near(crossing.gate,1.32))return {
     label:save.nellPumpLog?'UNLOCK THE CROSSING GATE':'EXAMINE THE CROSSING GATE',
@@ -6114,6 +6159,8 @@ function render(t){
     const scx=W/2*(1+tx/ty),size=WS/ty,floorY=hz+size/2,depth=1/ty;
     let [w,h,lift]=SIZE[o.t]||[.22,.22,0];
     if(o.t==='manorPostBell'){w=.30;h=.48;lift=.34}
+    if(o.t==='glasshouseTag'){w=.24;h=.17;lift=o.lift??.46}
+    if(o.t==='sillRabbit'){w=.25;h=.33;lift=o.lift}
     if(o.t==='pumpPlate'){w=.65;h=.46}
     if(o.t==='pumpWheel'){w=.84;h=.89}
     if(o.t==='pumpBell'){w=.47;h=.57}
@@ -6337,6 +6384,26 @@ function shadeManorFurniture(kind,u,v,L){
   return ink(111,71,42,v<.10?1.15:.85);
 }
 function shade(o,u,v,time,L,open){
+  if(o.t==='sillRabbit'){
+    const x=u-.5;
+    const ears=Math.hypot((x+.13+(v-.20)*.20)*3.6,(v-.21)*1.13)<.235||
+      Math.hypot((x-.15-(v-.23)*.34)*3.9,(v-.24)*1.4)<.218;
+    const head=Math.hypot(x,(v-.48)*1.35)<.255,body=Math.hypot(x,(v-.75)*.92)<.267;
+    const feet=v>.79&&Math.hypot(Math.abs(x)-.20,(v-.88)*1.4)<.14;
+    if(!ears&&!head&&!body&&!feet)return 0;
+    const eye=Math.hypot(x-.11,v-.46)<.037,seam=Math.abs(x+.13)<.022&&Math.abs(v-.46)<.051;
+    const cloth=.70+.30*hash(u*48|0,v*58|0,52);
+    const k=cloth*(.45+Math.min(.62,L));
+    return eye?px32(37,30,26):seam?px32(88*k|0,57*k|0,40*k|0):px32(152*k|0,122*k|0,96*k|0);
+  }
+  if(o.t==='glasshouseTag'){
+    const x=Math.abs(u-.5);
+    if(x>.45||v<.10||v>.91)return 0;
+    const bevel=x>.39||v<.17||v>.84;
+    const letters=v>.40&&v<.63&&x<.31&&(u*23)%1<.6;
+    const k=(bevel?.68:letters?.54:1)*(.63+.37*hash(u*53|0,v*31|0,23))*(.35+Math.min(.8,L));
+    return px32(181*k|0,177*k|0,151*k|0);
+  }
   const t=o.t;
   if(t==='returnCup'){
     const x=u-.43,body=Math.abs(x)<.28*(1-.40*v)&&v>.18&&v<.89;
@@ -6356,7 +6423,8 @@ function shade(o,u,v,time,L,open){
   if(t==='lookoutSill'){
     if(!morning.lookout.shutterOpen)return 0;
     const grain=.77+.23*hash(u*77|0,v*85|0,38),edge=v<.20||Math.abs(u-.5)>.43;
-    const k=grain*(edge?1.16:.85);
+    const wear=save.nellGlasshouseTag?.32*Math.max(0,1-Math.hypot((Math.abs(u-.5)-.24)*9,(v-.25)*6)):0;
+    const k=grain*(edge?1.16:.85)+wear;
     return px32(105*k|0,81*k|0,62*k|0);
   }
   if(t==='lookoutShutter'){
@@ -6964,6 +7032,8 @@ function journalEntries(withNarration=true){
   const memories=GIRL_MEMORIES.filter((_,i)=>save.girlMemories.includes(i));
   return `${save.manorNotes.length?`<p class="small">Ground-floor clues · ${save.manorNotes.length} of ${MANOR_CLUES.length}</p><div class="jr">${MANOR_CLUES.filter((_,i)=>save.manorNotes.includes(i)).map(entry=>`<article class="pg"><b>${entry.name}</b><h2>${entry.title}</h2>${entry.body}</article>`).join('')}</div>`:''}
   ${save.manorTube?`<div class="jr"><article class="pg"><b>The speaking passage</b><h2>Someone answers twice</h2>${MANOR_TUBE_ANSWER}</article></div>`:''}
+  ${save.glasshouseTag?`<div class="jr"><article class="pg"><b>The Glasshouse</b><h2>Button at the window</h2>${GLASSHOUSE_TAG_NOTE}</article></div>`:''}
+  ${save.nellGlasshouseTag?`<div class="jr"><article class="pg"><b>The blue house</b><h2>The sign in the rain</h2>${NELL_GLASSHOUSE_NOTE}</article></div>`:''}
   ${save.cellarTrace?`<div class="jr"><article class="pg"><b>The cellar</b><h2>What to ask the voice</h2>${MANOR_CELLAR_NOTE}</article></div>`:''}
   ${save.papaAnswer?`<div class="jr"><article class="pg"><b>Papa</b><h2>How Button lost his eye</h2>${PAPA_ANSWER}</article></div>`:''}
   ${save.nurseryDrawer?`<div class="jr"><article class="pg"><b>The nursery alcove</b><h2>Under the music box</h2>${NURSERY_NOTE}<p>${NURSERY_HIDING_HINT}</p></article></div>`:''}
@@ -6979,6 +7049,9 @@ function journalEntries(withNarration=true){
   ${save.watchBird?`<div class="jr"><article class="pg"><b>The Keeper’s Watch</b><h2>The shutter across the road</h2>${WATCH_BIRD_NOTE}</article></div>`:''}
   ${save.lookoutLedger?`<div class="jr"><article class="pg"><b>Across the road</b><h2>Every morning</h2>${SHUTTER_LEDGER}</article></div>`:''}
   ${save.lookoutShutter?`<div class="jr"><article class="pg"><b>Across the road</b><h2>Someone was waiting</h2>${SHUTTER_ANSWER}</article></div>`:''}
+  ${save.nellSillMark?`<div class="jr"><article class="pg"><b>Across the road</b><h2>Where Nell waited</h2>${NELL_SILL_NOTE}</article></div>`:''}
+  ${save.maraSillReply?`<div class="jr"><article class="pg"><b>The blue house</b><h2>Button’s good eye</h2>${MARA_SILL_REPLY}</article></div>`:''}
+  ${save.windowTogether?`<div class="jr"><article class="pg"><b>The blue house</b><h2>Good morning</h2>${WINDOW_TOGETHER}</article></div>`:''}
   ${save.washYardTin?`<div class="jr"><article class="pg"><b>The wash yard</b><h2>Two paper birds</h2>${WASH_TIN}${save.returnedTin?`<p>${WASH_RETURN}</p>`:''}</article></div>`:''}
   ${save.dawnSeen?`<div class="jr"><article class="pg"><b>The morning after</b><h2>At the garden gate</h2>${DAWN_GOODBYE}</article></div>`:''}
   ${save.dawnLanding?`<div class="jr"><article class="pg"><b>The river landing</b><h2>The blue house upstream</h2>${LANDING_STORY}</article></div>`:''}
@@ -7011,6 +7084,10 @@ function journalLeads(inRun=false){
     if(save.lookoutShutter&&save.blueHome&&!save.shutterReunion)addMorningLead('Tell Mara and Nell about the shutter from the chair by the kitchen table.','blue');
     if(save.shutterReunion&&!save.blueWindowBird)addMorningLead('Set Mara’s paper bird in the front window of the blue house.','blue');
     if(save.blueHome&&save.manorNotes.includes(MANOR_POST_CLUE)&&!save.nellPostLetter)addMorningLead('Show Nell the post room letter at the blue house.','blue');
+    if(save.glasshouseTag&&!save.nellGlasshouseTag)addMorningLead('Show Nell Mara’s plant label at the blue house.','blue');
+    if(save.nellGlasshouseTag&&!save.nellSillMark)addMorningLead('Look from Nell’s place at the sill across the road.','lookout');
+    if(save.nellSillMark&&!save.maraSillReply)addMorningLead('Tell Mara what you found in Nell’s tally. Meet her at the blue house window.','blue');
+    if(save.maraSillReply&&save.blueWindowBird&&!save.windowTogether)addMorningLead('Stand with Mara at the blue house window.','blue');
     if(save.nellPostLetter&&save.pumpLog&&!save.nellPumpLog)addMorningLead('Tell Nell what you found in the pump house log.','blue');
     if(save.nellPumpLog&&!save.crossingLit)addMorningLead('Use Nell’s key at the old crossing, past the pump house bench.','crossing');
     if(save.crossingLit&&save.blueWindowBird&&!save.blueFinale)addMorningLead('Tell Mara and Nell what you saw at the crossing.','blue');
