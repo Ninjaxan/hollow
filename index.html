@@ -29,6 +29,8 @@ button.fr{background:#001a12;border-color:#2a7}
 #bat{width:90px;height:6px;border:1px solid #555;display:inline-block;vertical-align:middle;margin-left:6px}
 #batf{height:100%;background:#cc9}
 #batf[data-low]{background:#ca884e}
+#findFriend{margin-top:5px;padding:4px 8px;min-width:0;font-size:12px;letter-spacing:0;background:#19130f;color:#f4e1b7;border-color:#8c724f;pointer-events:auto}
+#findFriend[aria-pressed=true]{border-color:#85b9aa;color:#c8e8de}
 #stb{width:90px;height:6px;border:1px solid #555;display:inline-block;vertical-align:middle;margin-left:6px}
 #stf{height:100%;background:#8ab}
 #toast{position:fixed;top:14px;left:50%;transform:translate(-50%,-80px);background:rgba(20,14,6,.92);border:1px solid #a80;color:#fd8;padding:8px 18px;font-size:15px;letter-spacing:.08em;transition:transform .4s;pointer-events:none;z-index:5;text-align:center}
@@ -145,7 +147,7 @@ button.fr{background:#001a12;border-color:#2a7}
 </head>
 <body>
 <canvas id="c" tabindex="-1"></canvas>
-<div id="hud">SIGILS <span id="sig">○○○</span><br>LIGHT<span id="bat"><div id="batf"></div></span><br>BREATH<span id="stb" class="bar"><div id="stf"></div></span><br><span id="inv"></span><br><span id="frd"></span></div>
+<div id="hud">SIGILS <span id="sig">○○○</span><br>LIGHT<span id="bat"><div id="batf"></div></span><br>BREATH<span id="stb" class="bar"><div id="stf"></div></span><br><span id="inv"></span><br><span id="frd"></span><button id="findFriend" type="button" aria-pressed="false" hidden>Find partner</button></div>
 <div id="msg"></div>
 <div id="toast"></div>
 <div id="joy"><div id="knob"></div></div>
@@ -229,7 +231,7 @@ let renderLevel=RENDER_SCALES.length-1,renderCost=0,renderSamples=0,renderStable
 function resize(){
   const width=Math.max(1,innerWidth),height=Math.max(1,innerHeight);
   const dpr=Math.min(devicePixelRatio||1,1.5),compact=Math.min(width,height)<600;
-  const pixelLimit=compact?270000:590000;
+  const pixelLimit=compact?270000:880000;
   const scale=Math.min(dpr,Math.sqrt(pixelLimit/(width*height)))*RENDER_SCALES[renderLevel];
   W=Math.max(1,Math.round(width*scale));H=Math.max(1,Math.round(height*scale));
   cv.width=W;cv.height=H;WS=W/(2*0.66);
@@ -580,6 +582,8 @@ function buildManor(){
   frame(40.5,25.5,1,Math.PI/2,'secret',post);
   frame(33.5,28.5,1,0,'service',post.shortcut);
   const lamps=rooms.map(r=>({x:r.clue.x-.60,y:r.clue.y+.32,t:'annexLamp',glow:r.prop==='planter'?'173,201,168':'255,177,92'}));
+  const glasshouse=rooms.find(room=>room.prop==='planter');
+  const windowLights=glasshouse?[19.5,22.5,25.5].map(x=>({x,y:glasshouse.bounds[1]+.36})):[];
   lamps.push({x:12.55,y:16.8,t:'annexLamp'},{x:16.45,y:9.4,t:'annexLamp'},{x:13.65,y:2.7,t:'annexLamp'});
   for(const lamp of lamps)lamp.t='manorLantern';
   const furniture=rooms.map(r=>({x:r.clue.x,y:r.clue.y-.20,t:'manorFurniture',kind:r.prop}));
@@ -598,7 +602,7 @@ function buildManor(){
     {x:35.18,y:26.22,t:'manorFurniture',kind:'portrait'},{x:40.78,y:28.61,t:'manorFurniture',kind:'desk'}
   );
   const hearth=furniture.find(prop=>prop.kind==='hearth');
-  return {rooms,tiles,lamps,furniture,frames,hearth,study,potting,service,post,
+  return {rooms,tiles,lamps,windowLights,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,study,potting,service,post,
     swings:[study.swing,potting.swing,service.swing,post.swing],active:-1,pin:null,mapRevision:0,route:null};
 }
 function newGame(fl,bat=100,tries=0){
@@ -841,6 +845,7 @@ function buildSprites(){
 
 // ---------- audio ----------
 let A,master,noiseBuf,ambGain,ambDuck;
+let glasshouseRain;
 const SFX={};
 function playSfx(k,gain=1,pan=0,rate=1){
   const b=SFX[k];if(!A||!b)return false;
@@ -882,6 +887,49 @@ function noise(dur,freq,q,gain,type='bandpass',t0=A.currentTime,pan=0){
   const g=A.createGain();g.gain.setValueAtTime(gain,t0);g.gain.exponentialRampToValueAtTime(.001,t0+dur);
   let out=master;if(pan&&A.createStereoPanner){out=A.createStereoPanner();out.pan.value=pan;out.connect(master)}
   s.connect(f).connect(g).connect(out);s.start(t0);s.stop(t0+dur+.05);
+}
+function updateGlasshouseRain(){
+  if(!A)return;
+  let closest=null,distance=9,direct=false;
+  if(state==='play'&&!fieldJournalOpen&&manor){
+    for(const window of manor.windowLights){
+      const d=Math.hypot(window.x-P.x,window.y-P.y);
+      if(d>=9)continue;
+      const visible=los(P.x,P.y,window.x,window.y);
+      const effective=d+(visible?0:2.4);
+      if(effective>=distance)continue;
+      closest=window;distance=effective;direct=visible;
+    }
+  }
+  if(!closest&&!glasshouseRain)return;
+  if(!glasshouseRain){
+    const source=A.createBufferSource(),filter=A.createBiquadFilter(),gain=A.createGain();
+    const stereo=A.createStereoPanner?.();
+    source.buffer=noiseBuf;source.loop=true;source.playbackRate.value=.83;
+    filter.type='lowpass';filter.frequency.value=820;
+    gain.gain.value=0;
+    source.connect(filter).connect(gain);
+    if(stereo)gain.connect(stereo).connect(master);else gain.connect(master);
+    source.start();
+    glasshouseRain={filter,gain,stereo};
+  }
+  const rain=glasshouseRain,{filter,gain,stereo}=rain;
+  const level=closest?(1-distance/9)**1.4*(direct?.17:.065):0;
+  const cutoff=direct?3800:780;
+  const pan=closest?panOf(closest)*(direct?.75:.35):0;
+  const now=A.currentTime;
+  if(rain.level===undefined||Math.abs(rain.level-level)>.001||level===0&&rain.level!==0){
+    rain.level=level;
+    gain.gain.setTargetAtTime(level,now,.24);
+  }
+  if(rain.cutoff!==cutoff){
+    rain.cutoff=cutoff;
+    filter.frequency.setTargetAtTime(cutoff,now,.23);
+  }
+  if(rain.pan===undefined||Math.abs(rain.pan-pan)>.025){
+    rain.pan=pan;
+    stereo?.pan.setTargetAtTime(pan,now,.18);
+  }
 }
 // -1 = hard left, 1 = hard right, from where o sits relative to where the player faces
 function panOf(o){const [tx,ty]=camSpace(o);return Math.max(-1,Math.min(1,1.6*tx/(Math.abs(tx)+Math.abs(ty)+1e-3)))}
@@ -993,6 +1041,7 @@ function netSend(){
   if(hidden?.loud)p.hn=1;
   if(coop.coverExit)p.he=coop.coverExit;
   p.character=save.character;
+  p.step=coop.step?.[1]===floor?coop.step:[coop.step?.[0]||0,floor];
   p.ls=stair?.open?1:null;
   if(manor?.study.open)p.ms=1;
   if(manor?.potting.open)p.mr=1;
@@ -1018,7 +1067,7 @@ function netRecv(dt){
   const fp=friendPeer(),was=coop.fp;coop.fp=fp?fp.presence:null;
   if(!fp){
     if(was?.st==='win'&&was.f===FLOORS){winGame(true);return}
-    if(was){say(`${was.n||'Your friend'} left. You're on your own now.`,4);coop.fs=null}
+    if(was){say(`${was.n||'Your friend'} left. You're on your own now.`,4);coop.fs=null;delete coop.heardStep}
     if(coop.role==='guest'&&was){coop.role='host'}   // the host left: this side runs the creature now
     return;
   }
@@ -1155,6 +1204,7 @@ addEventListener('keydown',e=>{
   }
   if(e.code==='KeyF')toggleLight();
   if(e.code==='KeyG')throwStone();
+  if(e.code==='KeyT')togglePartnerRoute();
   if(e.code==='KeyM')mapOpen=!mapOpen;
   if(e.code==='KeyC')chalkMark();
   if(e.code==='KeyR')wispBurst();
@@ -1789,6 +1839,7 @@ function queueManorMapSave(){
 function markSeen(cell){
   if(seen[cell]!==0)return;
   seen[cell]=1;
+  if(coop?.partnerRoute)coop.partnerRoute.mapRevision++;
   if(escapeGrace>0)escapeMapRevision++;
   if(floorEscapeRoute)floorEscapeRoute.mapRevision++;
   if(manor){manor.mapRevision++;queueManorMapSave()}
@@ -1859,6 +1910,29 @@ function floorEscapeMapRoute(destination){
   return exploredMapRoute(floorEscapeRoute,destination.key,
     cell=>distance(cell%S,cell/S|0)===(destination.adjacent?1:0),distance);
 }
+function partnerMapRoute(){
+  if(!coop?.findPartner||!friendHere())return null;
+  const point=coop.fp.p;
+  if(!point||!Number.isFinite(point[0])||!Number.isFinite(point[1]))return null;
+  const x=point[0]|0,y=point[1]|0;
+  if(grid[y]?.[x]!==0)return null;
+  let scene=coop.partnerRoute;
+  if(scene?.seen!==seen||scene.geometry!==escapeMapRevision){
+    scene=coop.partnerRoute={seen,geometry:escapeMapRevision,mapRevision:0};
+  }
+  return exploredMapRoute(scene,x+y*S,cell=>cell===x+y*S,(cx,cy)=>Math.abs(cx-x)+Math.abs(cy-y));
+}
+function partnerRouteLabel(route){
+  const name=fname()||'Partner';
+  if(route.status==='arrived')return `${name} is beside you`;
+  if(route.steps.length)return `${nextRouteDirection(route)} · ${name}${route.status==='partial'?' · Explored path only':''}`;
+  return `${name} · No explored route yet`;
+}
+function togglePartnerRoute(){
+  if(!friendHere()||fieldJournalOpen)return;
+  coop.findPartner=!coop.findPartner;
+}
+$('findFriend').onclick=togglePartnerRoute;
 function nextRouteDirection(route){
   if(!route?.steps.length)return '';
   const next=route.steps[0];
@@ -1888,7 +1962,7 @@ function nearbyCoverRoute(){
   escapeCover={start,revision:escapeMapRevision,route};
   return route;
 }
-function drawMap(){
+function drawMap(partnerRoute){
   const pin=manor?.rooms[manor.pin];
   let length=annex?.oldSize?annex.oldSize+4:S;
   if(stair?.open)length=stair.watch.open?S:annex.oldSize+23;
@@ -1924,8 +1998,8 @@ function drawMap(){
     else{g.fillStyle='#f1e8ca';g.fillRect(x*cs,y*cs,cs,cs);g.strokeStyle='#5a3a26';g.lineWidth=Math.max(1,cs/8);for(let b=1;b<4;b++){g.beginPath();g.moveTo(x*cs+b*cs/4,y*cs);g.lineTo(x*cs+b*cs/4,y*cs+cs);g.stroke()}}
   }
   const escape=floorEscapeRoute?.active?floorEscapeDestination():null;
-  const route=pin?manorMapRoute(pin):manor?.pin==='stairs'?manorStairsRoute():
-    morning?.pin?morningMapRoute(morning.pin):escape?floorEscapeMapRoute(escape):null;
+  const route=partnerRoute||(pin?manorMapRoute(pin):manor?.pin==='stairs'?manorStairsRoute():
+    morning?.pin?morningMapRoute(morning.pin):escape?floorEscapeMapRoute(escape):null);
   if(route?.steps.length){
       const [sx,sy]=at(P.x-.5,P.y-.5);
       g.beginPath();g.moveTo(sx,sy);
@@ -2001,7 +2075,7 @@ function drawMap(){
   for(const [k,c] of chalkAt){const w=k>>2,f=k&3,o=[[-.5,0],[.5,0],[0,-.5],[0,.5]][f];const [x,y]=at((w%S)+o[0]*.8,((w/S)|0)+o[1]*.8);
     g.fillStyle=`rgb(${c})`;g.strokeStyle='#2a1f14';g.lineWidth=1;g.beginPath();for(let j=0;j<10;j++){const r=(j%2?.18:.42)*cs,a=-Math.PI/2+j*Math.PI/5;g.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r)}g.closePath();g.fill();g.stroke()}
   if(papa&&seen[(papa.x|0)+(papa.y|0)*S]){const [x,y]=at(papa.x-.5,papa.y-.5);g.fillStyle='#2a5a9a';g.beginPath();g.arc(x,y,cs*.3,0,7);g.fill();g.fillStyle='#f1e8ca';g.font=`bold ${Math.max(8,cs*.45)|0}px Georgia`;g.textAlign='center';g.fillText('P',x,y+cs*.16);g.textAlign='left'}
-  if(friendHere()){const [x,y]=at(coop.fs.x-.5,coop.fs.y-.5);g.fillStyle=(LIGHTS[coop.fp.c]||LIGHTS[0]).c;g.beginPath();g.arc(x,y,cs*.3,0,7);g.fill();g.strokeStyle='#2a1f14';g.lineWidth=1;g.stroke()}
+  if(friendHere()){const [x,y]=at(coop.fs.x-.5,coop.fs.y-.5);g.fillStyle=partnerRoute?'#488e7c':(LIGHTS[coop.fp.c]||LIGHTS[0]).c;g.beginPath();g.arc(x,y,cs*.3,0,7);g.fill();g.strokeStyle='#2a1f14';g.lineWidth=1;g.stroke()}
   const [px,py]=at(P.x-.5,P.y-.5),r=cs*.62;
   g.fillStyle=LIGHTS[save.light].c;g.strokeStyle='#2a1f14';g.lineWidth=Math.max(1,cs/10);g.beginPath();
   g.moveTo(px+Math.cos(P.a)*r,py+Math.sin(P.a)*r);g.lineTo(px+Math.cos(P.a+2.5)*r*.75,py+Math.sin(P.a+2.5)*r*.75);g.lineTo(px+Math.cos(P.a-2.5)*r*.75,py+Math.sin(P.a-2.5)*r*.75);g.closePath();g.fill();g.stroke();
@@ -2474,16 +2548,25 @@ const FOOTSTEP_SURFACES={
   wood:{impact:275,scuff:820,weight:1,duration:.13,tail:.45},
   rug:{impact:185,scuff:680,weight:.61,duration:.083,tail:.19},
   stone:{impact:390,scuff:1700,weight:.92,duration:.10,tail:.56},
+  wetTile:{impact:350,scuff:2280,weight:.91,duration:.12,tail:.72},
   earth:{impact:220,scuff:1200,weight:.73,duration:.12,tail:.48}
 };
 const manorTiled=room=>room?.prop==='range'||room?.prop==='planter';
+function glasshouseWater(x,y,bounds){
+  const lane=Math.floor((x-bounds[0])/3);
+  const dx=(x-bounds[0]-lane*3-1.45)*.94;
+  const dy=(y-bounds[1]-1.30-(lane&1)*.41)*1.12;
+  return Math.max(0,Math.min(1,(.94-dx*dx-dy*dy+dx*dy*.27)*3));
+}
 const manorCarpetEdge=(x,y,b)=>Math.min(x-b[0]-1.05,b[2]+.1-x,y-b[1]-.8,b[3]+.12-y);
 const blueHouseRug=(x,y)=>x>29.45&&x<33.2&&y>27.3&&y<30.15;
 function floorUnderfoot(x,y){
   const ix=x|0,iy=y|0;
   if(manor){
     const room=manor.rooms[manor.tiles[ix+iy*S]-1];
-    if(manorTiled(room))return 'stone';
+    if(manorTiled(room)){
+      return room.prop==='planter'&&glasshouseWater(x,y,room.bounds)>.42?'wetTile':'stone';
+    }
     return room?.bounds&&manorCarpetEdge(x,y,room.bounds)>0?'rug':'wood';
   }
   if(morning){
@@ -2495,13 +2578,47 @@ function floorUnderfoot(x,y){
   }
   return (floor-1)%4===3?'wood':'stone';
 }
-function playerFootstep(){
+function playBootStep(x,y,character,sprint,volume=1,pan=0,muffled=false){
   if(!A)return;
-  const boot=BOOT_SOUNDS[save.character],surface=FOOTSTEP_SURFACES[floorUnderfoot(P.x,P.y)];
-  const strength=(running?.22:.13)*boot.weight*surface.weight;
+  const boot=BOOT_SOUNDS[playerId(character)],surface=FOOTSTEP_SURFACES[floorUnderfoot(x,y)];
+  const strength=(sprint?.22:.13)*boot.weight*surface.weight*volume;
   const variation=.93+Math.random()*.14,t=A.currentTime;
-  noise(surface.duration,surface.impact*boot.pitch*variation,1.35,strength,'lowpass',t);
-  noise(surface.duration*.68,surface.scuff*boot.pitch*variation,2.3,strength*surface.tail*boot.scuff,'bandpass',t+.027);
+  noise(surface.duration,surface.impact*boot.pitch*variation,1.35,strength,'lowpass',t,pan);
+  noise(surface.duration*.68,surface.scuff*boot.pitch*variation*(muffled?.52:1),2.3,
+    strength*surface.tail*boot.scuff,'bandpass',t+.027,pan);
+}
+function disturbGlasshouseWater(x,y,sprint){
+  if(!manor||floorUnderfoot(x,y)!=='wetTile')return;
+  const ripples=manor.storm.ripples;
+  if(ripples.length>=5)ripples.shift();
+  ripples.push({x,y,started:timeIn,strength:sprint?1:.68});
+}
+function playerFootstep(){
+  disturbGlasshouseWater(P.x,P.y,running);
+  playBootStep(P.x,P.y,save.character,running);
+  if(coop&&!morning){
+    const number=(coop.step?.[0]||0)+1;
+    coop.step=[number,floor,Math.round(P.x*100)/100,Math.round(P.y*100)/100,+running];
+  }
+}
+function friendFootstep(field){
+  if(!coop)return;
+  const peer=coop.fp,stamp=peer?.step;
+  if(!Array.isArray(stamp)||!Number.isSafeInteger(stamp[0])||stamp[0]<0)return;
+  const [number,stepFloor,x,y,sprint]=stamp;
+  const previous=coop.heardStep;
+  if(previous!==undefined&&number<=previous)return;
+  coop.heardStep=number;
+  if(stamp.length!==5||previous===undefined||stepFloor!==floor||peer.f!==floor||peer.st!=='play'||coop.fs?.inCover||
+    !Number.isFinite(x)||!Number.isFinite(y)||solid(x,y))return;
+  const path=field[(x|0)+(y|0)*S];
+  const distance=Math.max(Math.hypot(P.x-x,P.y-y),path);
+  const reach=sprint?11:8;
+  if(path<0||distance>=reach)return;
+  disturbGlasshouseWater(x,y,!!sprint);
+  const muffled=!los(P.x,P.y,x,y),source=muffled?corridorSoundSource({x,y},path,field):{x,y};
+  const gain=(1-distance/reach)**1.3*(muffled?.31:.59);
+  playBootStep(x,y,peer.character,!!sprint,gain,panOf(source),muffled);
 }
 function updateFollower(dt,stepped,walking,entityDistance){
   if(ghost){ghost.life-=dt;if(ghost.life<=0)ghost=null}
@@ -3855,6 +3972,7 @@ function update(dt){
 
   if(manor){
     const {service,post}=manor;
+    advanceGlasshouseStorm(dt);
     if(service.answerIn>0){
       service.answerIn-=dt;
       if(service.answerIn<=0&&Math.hypot(P.x-service.tube.x,P.y-service.tube.y)<11){
@@ -4063,6 +4181,7 @@ function update(dt){
   lamplighterTell(dt,lamplighterDistance);
   lamplighterAroundCorner(dt,lamplighterDistance,soundField);
   lamplighterSteps(dt,lamplighterDistance,soundField);
+  friendFootstep(soundField);
 
   // the Crawler: blind, upside down on the ceiling, it goes to whatever it hears. Lockers hide you completely.
   if(C){
@@ -4251,7 +4370,11 @@ function manorWood(u,v,x,y,seed=0){
 const MANOR_TIMBER=bakeManorTexture((u,v,x,y)=>{
   const plank=u*5,seam=plank%1,board=plank|0,join=(v+hash(board,8,2))%1;
   const gap=seam<.026||join<.013,edge=seam>.965||join>.985;
-  const k=manorWood(u,v,x,y,board)*(.79+.27*hash(board,6,9))*(gap?.44:edge?1.22:1);
+  const knotV=hash(board,4,13),knotU=hash(board,7,4)*.44+.28;
+  const knot=Math.hypot((seam-knotU)*.92,(v-knotV)*3.5);
+  const figure=knot<.24?.94+.12*Math.cos(knot*123)-.30*Math.max(0,1-knot*13):1;
+  const nail=(Math.abs(join-.04)<.012||Math.abs(join-.954)<.012)&&Math.abs(seam-.22)<.049;
+  const k=manorWood(u,v,x,y,board)*(.79+.27*hash(board,6,9))*figure*(gap?.44:nail?.49:edge?1.22:1);
   return [132*k,92*k,59*k];
 });
 const MANOR_CEILING=bakeManorTexture((u,v,x,y)=>{
@@ -4273,7 +4396,9 @@ const MANOR_TILE=bakeManorTexture((u,v,x,y)=>{
   const col=u*3,row=v*3,edge=Math.min(col%1,row%1,1-col%1,1-row%1);
   const k=(edge<.038?.55:edge<.071?.83:1)*(.84+.14*hash(col|0,row|0,24)+.05*hash(x,y,10));
   const light=((col|0)+(row|0))%2===0;
-  return (light?[136,132,113]:[89,105,100]).map(channel=>channel*k);
+  const vein=Math.sin(u*34+v*49+Math.sin(v*13)*2.4);
+  const mineral=.94+.09*Math.abs(vein)+Math.max(0,vein-.92)*.65;
+  return (light?[136,132,113]:[89,105,100]).map(channel=>channel*k*mineral);
 });
 function bakeManorWall(color,service=false){
   return bakeManorTexture((u,v,x,y)=>{
@@ -4294,23 +4419,91 @@ function bakeManorWall(color,service=false){
 }
 const MANOR_WALLS=MANOR_CLUES.map(room=>bakeManorWall(room.color,room.prop==='range'||room.prop==='pipe'));
 const MANOR_HALL_WALL=bakeManorWall([119,84,61]);
-const GLASSHOUSE_WINDOW=bakeManorTexture((u,v,x,y)=>{
+let manorWallNeighbors,manorLightGrid=null,manorLightRevision=-1;
+function prepareManorLighting(){
+  if(manorLightGrid===grid&&manorLightRevision===escapeMapRevision)return;
+  manorLightGrid=grid;manorLightRevision=escapeMapRevision;
+  manorWallNeighbors=new Uint8Array(S*S);
+  for(let y=1;y<S-1;y++)for(let x=1;x<S-1;x++){
+    if(grid[y][x]!==0)continue;
+    manorWallNeighbors[x+y*S]=(grid[y][x-1]?1:0)|(grid[y][x+1]?2:0)|
+      (grid[y-1][x]?4:0)|(grid[y+1][x]?8:0);
+  }
+}
+const glasshouseFrame=(u,v)=>Math.abs(u-.5)<.026||u<.045||u>.955||Math.abs(v-.34)<.025||v<.035||v>.63;
+const GLASSHOUSE_WINDOWS=Array.from({length:4},(_,pane)=>bakeManorTexture((u,v,x,y)=>{
   const light=.82+.18*hash(x,y,22);
-  const mullion=Math.abs(u-.5)<.026||u<.045||u>.955||Math.abs(v-.34)<.025||v<.035||v>.63;
-  if(mullion)return [82*light,80*light,66*light];
-  const crack=Math.abs(u-.27-(v-.13)*.66)<.006&&v>.13&&v<.53;
-  const condensation=hash(x>>1,y>>3,7)>.89;
-  const k=light*(crack?1.48:condensation?1.18:1);
-  return [55*k,79*k,81*k];
-});
+  if(glasshouseFrame(u,v))return [76*light,73*light,60*light];
+  const crack=pane===1&&Math.abs(u-.27-(v-.13)*.66)<.004&&v>.13&&v<.53;
+  const condensation=hash(x>>1,y>>3,7)>.89||v>.50&&hash(x>>2,y>>2,23)>.67;
+  const stem=u-(.19+pane*.17)-Math.sin(v*6.1+pane)*.10;
+  const branch=u-(.28+pane*.11)-(v-.39)*(pane%2?.71:-.66);
+  const silhouettes=v>.14&&(Math.abs(stem)<.018+v*.022||v>.32&&Math.abs(branch)<.014)?.64:1;
+  const k=light*(crack?1.65:condensation?1.20:silhouettes);
+  return [61*k,94*k,109*k];
+}));
 function manorTextureOffset(u,v){
   const mask=MANOR_TEXTURE_SIZE-1;
   return (((v*MANOR_TEXTURE_SIZE|0)&mask)*MANOR_TEXTURE_SIZE+((u*MANOR_TEXTURE_SIZE|0)&mask))*3;
 }
+function glasshouseReflection(x,y,bounds,t){
+  const towardWindow=y-P.y;
+  if(towardWindow>=-.08)return -1;
+  const distance=(bounds[1]-y)/towardWindow;
+  const v=1-distance*.5;
+  if(v<.035||v>.63)return -1;
+  const ripple=.018*Math.sin(x*14+y*19-t*4);
+  const hit=x+(x-P.x)*distance+ripple;
+  if(hit<bounds[0]||hit>=bounds[2]+1)return -1;
+  const u=hit-Math.floor(hit);
+  if(glasshouseFrame(u,v))return -1;
+  return manorTextureOffset(u,v)+(Math.floor(hit)&3)*MANOR_TEXTURE_SIZE*MANOR_TEXTURE_SIZE*3;
+}
 
 // ---------- lights: Wisp, sigils, gems, the open door and a friend's lantern glow on walls and floor ----------
 let LT=[];
-function gatherLights(t){
+const gentleStorm=matchMedia('(prefers-reduced-motion: reduce)');
+function advanceGlasshouseStorm(dt){
+  const source=manor.windowLights[1],storm=manor.storm;
+  while(storm.ripples.length&&timeIn-storm.ripples[0].started>=.85)storm.ripples.shift();
+  if(!source||Math.hypot(P.x-source.x,P.y-source.y)>8)return;
+  if(A&&glasshouseRain?.cutoff===3800&&glasshouseRain.level>.025){
+    storm.dropWait=(storm.dropWait??.22)-dt;
+    if(storm.dropWait<=0){
+      storm.dropWait=.16+Math.random()*.36;
+      noise(.062,1880+Math.random()*900,3,glasshouseRain.level*.20,'bandpass',A.currentTime,glasshouseRain.pan);
+    }
+  }
+  storm.next-=dt;
+  const previous=storm.age;
+  storm.age+=dt;
+  if(storm.next<=0){
+    storm.next=19+Math.random()*11;
+    storm.age=0;
+  }else if(previous<1.05&&storm.age>=1.05&&A){
+    const now=A.currentTime,pan=panOf(source),gain=los(P.x,P.y,source.x,source.y)?.11:.045;
+    noise(1.27,98,1.15,gain,'lowpass',now,pan);
+    noise(.72,195,1.2,gain*.30,'lowpass',now+.18,pan);
+  }
+}
+function glasshouseRipple(x,y,ripples){
+  let crest=0;
+  for(const step of ripples){
+    const dx=x-step.x,dy=y-step.y,delta=dx*dx+dy*dy;
+    if(delta>step.outer||delta<step.inner)continue;
+    const offset=Math.hypot(dx,dy)-step.radius;
+    crest+=step.strength*Math.max(0,1-Math.abs(offset)*21)*Math.cos(offset*41);
+  }
+  return crest;
+}
+function glasshouseLightning(){
+  const age=manor?.storm.age;
+  if(!(age>=0&&age<.64))return 0;
+  const attack=Math.min(1,age/.16);
+  const decay=1-Math.max(0,(age-.16)/.48);
+  return attack*decay*(gentleStorm.matches?.22:1);
+}
+function gatherLights(t,lightning=glasshouseLightning()){
   LT=[];
   const add=(o,r,g,b,k)=>{const tile=(o.x|0)+(o.y|0)*S;if(o._lt!==tile||!o._vis||o._S!==S){o._lt=tile;o._S=S;o._vis=new Uint8Array(S*S);
       for(let y=Math.max(0,(o.y|0)-4);y<=Math.min(S-1,(o.y|0)+4);y++)for(let x=Math.max(0,(o.x|0)-4);x<=Math.min(S-1,(o.x|0)+4);x++)if(!grid[y][x]&&los(o.x,o.y,x+.5,y+.5))o._vis[x+y*S]=1}
@@ -4337,6 +4530,9 @@ function gatherLights(t){
     add(lamp,1,cool?.84:.68,cool?.79:.43,.53*flicker);
   }
   if(manor){
+    for(const window of manor.windowLights){
+      if(Math.hypot(P.x-window.x,P.y-window.y)<8)add(window,.32,.59,.86,.28+lightning*.28);
+    }
     const hearth=manor.hearth;
     if(hearth&&Math.hypot(P.x-hearth.x,P.y-hearth.y)<8)
       add(hearth,1,.44,.18,.32+.075*Math.sin(t*6.3)+.04*Math.sin(t*15.1));
@@ -4608,7 +4804,7 @@ function actorTriangle(a,b,c,color,fog,texture,shadow=false){
         b+=((tex[a+2]*wa0+tex[b0+2]*wb0+tex[c0+2]*wc0+tex[d+2]*wd0)*light-b)*m;
       }
       if(fog){
-        const bg=actorBackground[i];
+        const bg=shadow?buf[i]:actorBackground[i];
         r=r*alpha+(bg&255)*fog;g=g*alpha+((bg>>>8)&255)*fog;b=b*alpha+((bg>>>16)&255)*fog;
       }
       buf[i]=px32(r|0,g|0,b|0);
@@ -4629,13 +4825,50 @@ function drawLamplighterShadow(hz){
   const body=[point(-.15,0),point(.15,0),point(.23,reach*.74),point(-.20,reach*.70)];
   const head=point(.04,reach),left=[point(-.10,reach*.46),point(-.45-down*.13,reach*.92),point(-.24,reach*.57)];
   const right=[point(.13,reach*.50),point(.48+down*.14,reach*.83),point(.23,reach*.58)];
-  actorBackground.set(buf);
   const ink=px32(13,11,14),fog=1-opacity;
   actorTriangle(body[0],body[1],body[2],ink,fog,null,true);
   actorTriangle(body[0],body[2],body[3],ink,fog,null,true);
   actorTriangle(body[3],body[2],head,ink,fog,null,true);
   actorTriangle(...left,ink,fog,null,true);
   actorTriangle(...right,ink,fog,null,true);
+}
+const FURNITURE_FOOTPRINTS={
+  desk:[.64,.24,.49],dining:[.77,.38,.46],books:[.38,.19,.79],piano:[.57,.26,.58],
+  settee:[.62,.26,.39],planter:[.44,.20,.37],linen:[.40,.20,.73],range:[.48,.27,.43],hearth:[.49,.21,.62]
+};
+function drawManorFurnitureShadows(hz){
+  if(!manor)return;
+  const beam=light.on&&light.flick&&!hidden;
+  const ink=px32(13,10,9);
+  const cameraX=Math.cos(P.a),cameraY=Math.sin(P.a);
+  for(const prop of manor.furniture){
+    const shape=FURNITURE_FOOTPRINTS[prop.kind];
+    if(!shape)continue;
+    const [width,depth,height]=shape;
+    const dx=prop.x-P.x,dy=prop.y-P.y,d=Math.hypot(dx,dy);
+    if(d>6.5||!los(P.x,P.y,prop.x,prop.y))continue;
+    const forward=dx*cameraX+dy*cameraY;
+    if(forward<.3||Math.abs(dx*cameraY-dy*cameraX)>forward*.92+.7)continue;
+    const angle=prop.a??Math.PI/2,cos=Math.cos(angle),sin=Math.sin(angle);
+    const strength=beam?Math.max(0,1-d/6.5)*lampStrength():0;
+    const length=strength>0?Math.min(1.55,height*(.46+d*.25)):0;
+    const castX=dx/d*length,castY=dy/d*length;
+    const project=(u,v,cast)=>{
+      const x=prop.x+cos*v-sin*u+cast*castX,y=prop.y+sin*v+cos*u+cast*castY;
+      const relX=x-P.x,relY=y-P.y;
+      const side=(relY*cameraX-relX*cameraY)/.66,z=relX*cameraX+relY*cameraY;
+      return z>.10?[W*.5*(1+side/z),hz+.498*WS/z,1/z,0,0]:null;
+    };
+    const patch=(w,dep,cast,opacity)=>{
+      const a=project(-w,-dep,0),b=project(w,-dep,0),c=project(w,dep,cast),e=project(-w,dep,cast);
+      if(!a||!b||!c||!e)return;
+      actorTriangle(a,b,c,ink,1-opacity,null,true);
+      actorTriangle(a,c,e,ink,1-opacity,null,true);
+    };
+    patch(width*1.11,depth*1.17,0,.15);
+    patch(width*.90,depth*.87,0,.18);
+    if(length>.1)patch(width*.87,depth*.77,1,.20*strength);
+  }
 }
 function actorMesh(mesh,point,material,frame){
   const atlas=ART.actor,patch=material[4],textured=patch!==undefined&&atlas.d;
@@ -5405,15 +5638,18 @@ function nurseryMobileMesh(t,form,limb){
   form(ACTOR_ROUND,0,0,.713,.038,.029,.050,brass);
 }
 
+const WISP_FLAME=ringMesh([[-1,0],[-.86,.55],[-.58,.88],[-.24,1],[.14,.82],[.47,.55],[.75,.27],[1,0]],20,
+  (a,z,r)=>[r*Math.cos(a)+Math.max(0,z)**2*.34,r*Math.sin(a),z]);
 function wispMesh(o,t,form){
-  const size=morning?.20:manor?.24:.34;
+  const size=morning?.20:manor?.21:.28;
   const [r,g,b]=o.scared?[207,214,255]:hexRgb(LIGHTS[save.light].c);
-  const core=[(r+255)/2,(g+255)/2,(b+255)/2,.93],edge=[r,g,b,.68];
-  const sway=.22*Math.sin(t*(o.scared?19:3));
-  form(ACTOR_ROUND,0,0,.46*size,.23*size,.21*size,.24*size,core);
-  form(ACTOR_ROUND,.08*size*sway,-.016,.70*size,.15*size,.14*size,.22*size,edge,sway);
-  form(ACTOR_ROUND,.32*size*sway,-.025,.85*size,.073*size,.085*size,.13*size,core,sway*2);
-  for(const side of [-1,1])form(ACTOR_ROUND,side*.082*size,.191*size,.48*size,.022*size,.025*size,.033*size,[91,76,72,.64]);
+  const core=[(r+255)*.5,(g+255)*.5,(b+255)*.5,.81],edge=[r*.86,g*.81,b*.78,.70];
+  const sway=.24*Math.sin(t*(o.scared?19:3)),pulse=1+.09*Math.sin(t*7.8);
+  form(WISP_FLAME,0,0,.55*size,.199*size,.177*size,.42*size*pulse,edge,sway);
+  form(WISP_FLAME,-.019*size,.047*size,.44*size,.142*size,.149*size,.25*size,core,sway*.6);
+  for(const side of [-1,1]){
+    form(ACTOR_ROUND,side*.057*size,.189*size,.43*size,.014*size,.012*size,.020*size,[82,64,51,.55]);
+  }
 }
 function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   const furniture=o.t==='manorFurniture'||o.t==='manorFrame';
@@ -5558,7 +5794,14 @@ function render(t){
     const angle=P.a+Math.atan((2*x/W-1)*.66);
     return .905+Math.sin(5*angle+.6)*.025+Math.sin(13*angle)*.021+Math.sin(28*angle+.9)*.012;
   }):null;
-  gatherLights(t);
+  const lightning=glasshouseLightning();
+  gatherLights(t,lightning);
+  const ripples=(manor?.storm.ripples||[]).map(step=>{
+    const age=Math.max(0,timeIn-step.started),radius=.045+age*1.16;
+    return {...step,radius,inner:Math.max(0,radius-.05)**2,outer:(radius+.05)**2,
+      strength:step.strength*Math.max(0,1-age/.85)};
+  });
+  if(manor)prepareManorLighting();
   const T0=tint[0],T1=tint[1],T2=tint[2];
   // floor + ceiling
   for(let y=0;y<H;y++){
@@ -5577,12 +5820,15 @@ function render(t){
     if(Math.abs(p)<1){buf.fill(morning?0xffa6adba:0xff000000,row,row+W);continue}
     const d=WS*.5/Math.abs(p);
     if(morning&&d>32){buf.fill(insidePump?px32(53,61,61):insideHouse?px32(87,70,57):px32(121,131,143),row,row+W);continue}
-    const fall=1/(1+d*d*.3),fl=p>0,TX=fl?TH.floor:TH.ceil,mul=fl?330:300,ad=morning?.77+.23/(1+d):manor?.34+.66/(1+d):1/(1+d);
+    const fall=1/(1+d*d*.3),fl=p>0,TX=fl?TH.floor:TH.ceil,TN=TX.n,mul=fl?330:300,ad=morning?.77+.23/(1+d):manor?.34+.66/(1+d):1/(1+d);
     let fx=P.x+d*(dx-pX),fy=P.y+d*(dy-pY);const sx=d*2*pX/W,sy=d*2*pY/W;
     for(let x=0;x<W;x++){
-      const TN=TX.n,ix=fx|0,iy=fy|0,ti=(((fy-iy)*TN|0)*TN+((fx-ix)*TN|0))*3,c=cone[x]*fall,gr=.94+Math.random()*.12;
+      const ix=fx|0,iy=fy|0,c=cone[x]*fall;
       let lr=c*T0+ambR*ad,lg=c*T1+ambG*ad,lb=c*T2+ambB*ad;
-      if(LT.length&&ix>0&&iy>0&&ix<S&&iy<S&&litAny[ix+iy*S]){lightAt(fx,fy,ix+iy*S);lr+=LA[0];lg+=LA[1];lb+=LA[2]}
+      let pool=0;
+      if(LT.length&&ix>0&&iy>0&&ix<S&&iy<S&&litAny[ix+iy*S]){
+        lightAt(fx,fy,ix+iy*S);lr+=LA[0];lg+=LA[1];lb+=LA[2];pool=LA[0];
+      }
       const roomId=manor&&ix>=0&&ix<S&&iy>=0&&iy<S?manor.tiles[ix+iy*S]:0;
       if(manor){
         const room=manor.rooms[roomId-1],bounds=room?.bounds;
@@ -5596,7 +5842,33 @@ function render(t){
           }
         }
         const i=manorTextureOffset(fx,fy);
-        buf[row+x]=px32(tex[i]*lr*detail|0,tex[i+1]*lg*detail|0,tex[i+2]*lb*detail|0);
+        const walls=ix>=0&&ix<S&&iy>=0&&iy<S?manorWallNeighbors[ix+iy*S]:0;
+        if(walls){
+          const u=fx-ix,v=fy-iy;
+          const edge=Math.min(walls&1?u:1,walls&2?1-u:1,walls&4?v:1,walls&8?1-v:1);
+          const contact=Math.max(0,1-edge*3.3);
+          detail*=1-.40*contact*contact;
+        }
+        const sheen=fl&&tex!==MANOR_CARPET?(c+pool*.36)*(tiled?28:15)/(1+d*.31):0;
+        const haze=.75*Math.min(18,Math.max(0,d-5))/18;
+        let wetR=0,wetG=0,wetB=0;
+        if(fl&&room?.prop==='planter'){
+          const water=glasshouseWater(fx,fy,bounds);
+          if(water>0){
+            detail*=1-water*.21;
+            const crest=glasshouseRipple(fx,fy,ripples);
+            const sample=glasshouseReflection(fx+crest*.045,fy,bounds,t);
+            if(sample>=0){
+              const stride=MANOR_TEXTURE_SIZE*MANOR_TEXTURE_SIZE*3,glass=GLASSHOUSE_WINDOWS[(sample/stride)|0],j=sample%stride;
+              const reflect=water*(.21+lightning*.31)*Math.min(1,d*.40);
+              wetR=glass[j]*reflect*.74;wetG=glass[j+1]*reflect*.88;wetB=glass[j+2]*reflect;
+            }
+            const glint=crest*water*(5+c*17+pool*20+lightning*8);
+            wetR+=glint*.65;wetG+=glint*.84;wetB+=glint;
+          }
+        }
+        buf[row+x]=px32(tex[i]*lr*detail+sheen+haze*2+wetR|0,tex[i+1]*lg*detail+sheen*.74+haze*2.7+wetG|0,
+          tex[i+2]*lb*detail+sheen*.48+haze*4.4+wetB|0);
       }else if(morning&&(fx<0||fy<0||ix>=S||iy>=S)){
         buf[row+x]=px32(121,131,143);
       }else if(morning&&ix>=4&&ix<8&&iy>=2&&iy<=4){
@@ -5665,8 +5937,12 @@ function render(t){
         const wet=Math.sin(fx*2.1+fy*.72)*Math.sin(fy*2.3);
         const puddle=wet>.53&&(ix===7||ix===8||ix===9);
         const k=puddle?.47:.73;
-        buf[row+x]=px32(TX[ti]*lr*mul*k*gr+14|0,TX[ti+1]*lg*mul*k*gr+19|0,TX[ti+2]*lb*mul*k*gr+26|0);
-      }else buf[row+x]=px32(TX[ti]*lr*mul*gr|0,TX[ti+1]*lg*mul*gr|0,TX[ti+2]*lb*mul*gr|0);
+        const ti=(((fy-iy)*TN|0)*TN+((fx-ix)*TN|0))*3;
+        buf[row+x]=px32(TX[ti]*lr*mul*k+14|0,TX[ti+1]*lg*mul*k+19|0,TX[ti+2]*lb*mul*k+26|0);
+      }else{
+        const ti=(((fy-iy)*TN|0)*TN+((fx-ix)*TN|0))*3;
+        buf[row+x]=px32(TX[ti]*lr*mul|0,TX[ti+1]*lg*mul|0,TX[ti+2]*lb*mul|0);
+      }
       fx+=sx;fy+=sy;
     }
   }
@@ -5725,13 +6001,25 @@ function render(t){
       const room=manor.rooms[(manor.tiles[cell]||0)-1];
       const tex=MANOR_WALLS[room?.idx]||MANOR_HALL_WALL;
       const glass=room?.prop==='planter'&&my===room.bounds[1]-1;
+      const glassTexture=glass?GLASSHOUSE_WINDOWS[mx&3]:null;
+      const rainLane=(u*42)|0,rainSeed=glass?hash(mx,rainLane,19):0;
+      const rainColumn=glass&&(u*42)%1<.11&&rainSeed>.39;
       const edge=Math.min(u,1-u),trim=edge<.045?.62:edge<.072?1.22:1;
       const litR=(R0+.013*sd)*3.85*trim,litG=(G0+.016*sd)*3.85*trim,litB=(B0+.024*sd)*3.85*trim;
+      const haze=Math.min(1,Math.max(0,d-5)/19);
       for(let y=y0;y<y1;y++){
         const v=(y-top)/lh,i=manorTextureOffset(u,v);
-        if(glass&&v<.65){
-          buf[y*W+x]=px32(GLASSHOUSE_WINDOW[i]*(litR+.12)|0,GLASSHOUSE_WINDOW[i+1]*(litG+.32)|0,GLASSHOUSE_WINDOW[i+2]*(litB+.40)|0);
-        }else buf[y*W+x]=px32(tex[i]*litR|0,tex[i+1]*litG|0,tex[i+2]*litB|0);
+        const junction=Math.max(0,Math.abs(v-.5)*2-.72)/.28;
+        const shape=(1-.28*junction*junction)*(1-.36*haze);
+        if(glassTexture&&v<.65){
+          const pane=!glasshouseFrame(u,v);
+          const trail=pane&&rainColumn?((v-t*(.21+rainSeed*.24)+rainSeed*7)%1+1)%1:1;
+          const glint=trail<.10?(1-trail*10)*24:0;
+          const stormLight=lightning*(pane?.43:.08);
+          buf[y*W+x]=px32(glassTexture[i]*(litR+(pane?.20:.05)+stormLight)*shape+glint*.47|0,
+            glassTexture[i+1]*(litG+(pane?.48:.07)+stormLight)*shape+glint*.78|0,
+            glassTexture[i+2]*(litB+(pane?.65:.10)+stormLight)*shape+glint|0);
+        }else buf[y*W+x]=px32(tex[i]*litR*shape+haze*3|0,tex[i+1]*litG*shape+haze*4|0,tex[i+2]*litB*shape+haze*7|0);
       }
       continue;
     }
@@ -5767,8 +6055,8 @@ function render(t){
         continue;
       }
       const v=house?1-height+Math.floor(height):(y-top)/lh;
-      const tv=(v*TN)|0,ti=(tv<0?0:tv>=TN?TN-1:tv)*TN*3+tu,gr=.95+Math.random()*.1;
-      buf[y*W+x]=px32(TX[ti]*R0*270*gr|0,TX[ti+1]*G0*270*gr|0,TX[ti+2]*B0*270*gr|0);
+      const tv=(v*TN)|0,ti=(tv<0?0:tv>=TN?TN-1:tv)*TN*3+tu;
+      buf[y*W+x]=px32(TX[ti]*R0*270|0,TX[ti+1]*G0*270|0,TX[ti+2]*B0*270|0);
     }
     const cm=chalkAt.size?chalkAt.get(fk):null;
     if(cm&&u>.28&&u<.72){  // a chalk star, only as bright as the light on the wall
@@ -5801,6 +6089,7 @@ function render(t){
     return {o,tx,ty,pose:furniture||o.t==='manorLantern'?{yaw:o.a??Math.PI/2}:actor?actorPose(o,t):null};
   }).filter(s=>s.pose?s.ty>-.34&&Math.abs(s.tx)<Math.max(0,s.ty)+(s.o.t==='manorFrame'?1.9:1.1):s.ty>.12).sort((a,b)=>b.ty-a.ty);
   objectDepth.fill(0);
+  drawManorFurnitureShadows(hz);
   drawLamplighterShadow(hz);
   const allGot=sigils.every(s=>s.got);let tag=null;const glows=[];
   for(const {o,tx,ty,pose} of list){
@@ -5811,6 +6100,7 @@ function render(t){
       const x=W/2*(1+tx/ty),y=hz-(.684-.5)*WS/ty;
       if(x>=0&&x<W&&ty<zbuf[x|0]&&y>=0&&y<H&&objectDepth[(y|0)*W+(x|0)]<=1/(ty-.14)){
         glows.push([x,y,Math.min(H*.22,WS/ty*.31),o.glow||'255,172,75',.31*manorLanternFlicker(o,t)]);
+        glows.push([x,y,Math.min(H*.09,WS/ty*.105),'255,211,135',.22*manorLanternFlicker(o,t)]);
       }
     }
     if(pose&&o.t!=='pet'){
@@ -5856,7 +6146,7 @@ function render(t){
     const y0=Math.max(0,Math.ceil(topY)),y1=Math.min(H,Math.ceil(bottom));
     const vis=scx>=0&&scx<W&&ty<zbuf[scx|0];
     if(vis){const cy=topY+ph/2;
-      if(o.t==='pet')glows.push([scx,cy,Math.min(ph*1.3,H*.18),o.scared?'200,200,230':hexRgb(LIGHTS[save.light].c).join(','),.16*wisp]);
+      if(o.t==='pet')glows.push([scx,cy,Math.min(ph*1.1,H*.14),o.scared?'200,200,230':hexRgb(LIGHTS[save.light].c).join(','),.13*wisp]);
       else if(o.t==='sigil')glows.push([scx,cy,ph*1.3,'255,40,25',.3+.1*Math.sin(t*4)]);
       else if(o.t==='gem')glows.push([scx,cy,ph*1.8,'110,220,255',.25]);
       else if(o.t==='orchardLamp')glows.push([scx,cy,ph*1.55,'255,172,82',.32]);
@@ -6965,6 +7255,7 @@ menu(TITLE,'ENTER');
 let last=performance.now();
 function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
+  updateGlasshouseRain();
   if(state==='play'){
     update(dt);
     if(state==='play'){
@@ -6985,12 +7276,20 @@ function loop(now){
     if(status&&status.textContent!==label)status.textContent=label;
   }
   const mo=state==='play'&&mapOpen&&!fieldJournalOpen;
+  const partner=state==='play'&&!fieldJournalOpen&&(mo||!hidden&&escapeGrace<=0)?partnerMapRoute():null;
+  const findFriend=$('findFriend');
+  findFriend.hidden=state!=='play'||fieldJournalOpen||!friendHere();
+  const tracking=String(!!coop?.findPartner);
+  if(findFriend.getAttribute('aria-pressed')!==tracking)findFriend.setAttribute('aria-pressed',tracking);
+  const friendButton=coop?.findPartner?'Stop tracking':'Find partner';
+  if(findFriend.textContent!==friendButton)findFriend.textContent=friendButton;
   const room=manor?.rooms[manor.pin],outdoorPin=morning?.pin,stairs=manor?.pin==='stairs';
   const escape=floorEscapeRoute?.active?floorEscapeDestination():null;
   const route=state==='play'&&!fieldJournalOpen?
     room?manorMapRoute(room):stairs?manorStairsRoute():outdoorPin?morningMapRoute(outdoorPin):escape?floorEscapeMapRoute(escape):null:null;
   const next=nextRouteDirection(route);
   let directionText=!mo&&!hidden&&next?`${next} · ${stairs?'Cellar stairs':room?.name||outdoorPin?.name||escape?.name}`:'';
+  if(!mo&&partner)directionText=partnerRouteLabel(partner);
   const hiding=state==='play'&&!mo&&!fieldJournalOpen&&hidden;
   if(hiding){
     const guidance=lockerStatus(hiding)+' '+lockerDiversionHint(hiding);
@@ -7019,9 +7318,9 @@ function loop(now){
     if(landmarks.hidden&&landmarks.contains(document.activeElement))cv.focus({preventScroll:true});
     if(landmarks.hidden){landmarks.replaceChildren();delete landmarks.dataset.layout}
   }
-  if(mo)drawMap();
+  if(mo)drawMap(partner);
   const info=$('mapInfo');
-  info.style.display=mo&&(manor||morning||escape)?'block':'none';
+  info.style.display=mo&&(manor||morning||escape||partner)?'block':'none';
   if(mo&&escape){
     const destination=route.status==='arrived'&&escape.key==='gate'?(escape.friendKey?'Your friend has the key':'Use the key on the iron gate'):
       route.status==='mapped'?`Route to ${escape.name}`:route.steps.length?`Toward ${escape.name} · Explored path only`:`${escape.name} · No explored route yet`;
@@ -7049,6 +7348,10 @@ function loop(now){
       landmarks.querySelector('.mapIndex')?'Select a marker or use the room index':isTouch?'Tap a room to pin it':'Select a room to pin it';
     const count=save.manorNotes.includes(MANOR_LIBRARY_CLUE)?`Sigils ${sigils.filter(sigil=>sigil.got).length}/${sigils.length}`:'';
     const label=[destination,next,count,'◆ unread clue','▯ hiding spot',isTouch?'Tap Map to close':'M to close'].filter(Boolean).join(' · ');
+    if(info.textContent!==label)info.textContent=label;
+  }
+  if(mo&&partner){
+    const label=partnerRouteLabel(partner)+(isTouch?' · Tap Map to close':' · M to close');
     if(info.textContent!==label)info.textContent=label;
   }
   if(state==='scare')drawScare(now);
