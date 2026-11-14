@@ -1728,6 +1728,8 @@ function lockerStatus(spot){
   if(spot.nearby==='conductorStalk')return 'The Conductor’s footsteps are close.';
   if(spot.nearby==='conductorStill')return 'The Conductor is outside. Face it when you leave.';
   if(spot.nearby==='mothPerch')return 'Wings brush the slats. Keep the lantern dark.';
+  if(spot.nearby==='mothLeaving')return 'The Moth’s wings are fading. Listen before you leave.';
+  if(spot.nearby==='mothReturn')return 'The wings are coming back. Stay inside.';
   if(spot.nearby==='mothSearch')return 'The Moth is searching near the locker.';
   if(spot.cue==='atStone')return 'It found the stone. The distraction is almost over.';
   if(spot.cue==='clear')return 'Its footsteps have moved down the hall.';
@@ -1761,7 +1763,9 @@ function coverEncounter(field){
       if(conductor.stage==='stalk')encounter='conductorStalk';
       else if(conductor.stage==='still'||conductor.stage==='rest')encounter='conductorStill';
     }
-    if(!encounter&&moth.stage==='perch'&&nearby(moth,1.8))encounter='mothPerch';
+    if(!encounter&&moth.stage==='returning'&&nearby(moth,3))encounter='mothReturn';
+    else if(!encounter&&moth.stage==='perch'&&nearby(moth,1.8))encounter='mothPerch';
+    else if(!encounter&&moth.stage==='leaving'&&nearby(moth,3))encounter='mothLeaving';
     else if(!encounter&&['search','sweep'].includes(moth.stage)&&nearby(moth,3))encounter='mothSearch';
   }
   if(encounter==='dollStill'&&hidden.nearby!==encounter){
@@ -2974,20 +2978,29 @@ function mothStep(dt){
     if(m.stage==='idle'&&m.timer===0&&target){
       m.stage='warning';m.timer=easy?1.35:1.05;
     }
-    if(m.stage==='warning'||m.stage==='hunt'||m.stage==='search'||m.stage==='sweep'||m.stage==='perch'){
+    if(m.stage==='leaving'&&!target){
+      const x=m.x+Math.cos(m.yaw)*dt*1.9,y=m.y+Math.sin(m.yaw)*dt*1.9;
+      if(m.timer>0&&!solid(x,y)){m.x=x;m.y=y}
+      else if(m.returnPass){
+        m.returnPass=false;m.stage='returning';m.timer=easy?1.15:1.55;
+      }
+      else{m.stage='idle';m.timer=1.2;m.goal=null}
+    }
+    if(['warning','hunt','search','sweep','perch','leaving','returning'].includes(m.stage)){
       if(target){
+        m.returnPass=false;
         const tile=(target.x|0)+(target.y|0)*S;
         if(m.goal?.tile!==tile)m.field=bfs(target.x|0,target.y|0,true);
         m.goal={x:target.x,y:target.y,tile};
       }
       if(m.stage==='warning'&&m.timer===0){m.stage=target?'hunt':'search';m.timer=2.1}
       else if(m.stage==='hunt'&&!target){m.stage='search';m.timer=2.1}
-      else if((m.stage==='search'||m.stage==='sweep'||m.stage==='perch')&&target)m.stage='hunt';
+      else if(target&&m.stage!=='warning')m.stage='hunt';
       m.pressure=m.stage==='hunt'?Math.min(1,(m.pressure||0)+dt*.86):0;
-      if(m.stage==='perch'){
+      if(m.stage==='perch'||m.stage==='returning'){
         const perch=m.goal;
         m.yaw=Math.atan2(perch.y-m.y,perch.x-m.x);
-        if(m.timer===0){m.stage='idle';m.timer=1.2;m.goal=null}
+        if(m.timer===0){m.stage='leaving';m.timer=m.returnPass?.53:.87;m.yaw+=Math.PI}
         else{
           const travel=Math.min(Math.max(0,distance(perch)-.57),dt*1.65);
           const x=m.x+Math.cos(m.yaw)*travel,y=m.y+Math.sin(m.yaw)*travel;
@@ -3010,7 +3023,10 @@ function mothStep(dt){
           const cover=[hidden,partnerCover].find(spot=>spot&&Math.hypot(spot.x-goal.x,spot.y-goal.y)<1.65&&
             los(goal.x,goal.y,spot.x,spot.y));
           if(cover){
-            m.stage='perch';m.timer=easy?1.45:2.1;m.goal={x:cover.x,y:cover.y};
+            const pattern=Math.random();
+            m.returnPass=pattern>=.66;
+            m.stage='perch';m.timer=(easy?1.1:1.4)+(pattern<.33?.12:pattern<.66?1.08:.45);
+            m.goal={x:cover.x,y:cover.y};
             m.yaw=Math.atan2(cover.y-m.y,cover.x-m.x);
           }else{m.stage='sweep';m.timer=.68}
         }else if(m.stage==='search'&&m.timer===0){
@@ -3049,6 +3065,14 @@ function mothStep(dt){
     if(m.stage==='perch'&&m.heardStage!=='perch'){
       noise(.44,1550,2.8,.23*gain,'bandpass',A.currentTime,pan);
       noise(.19,2870,4,.13*gain,'bandpass',A.currentTime+.29,pan);
+    }
+    if(m.stage==='leaving'&&m.heardStage!=='leaving'){
+      noise(.49,510,1.8,.16*gain,'bandpass',A.currentTime,pan);
+      noise(.18,1130,2.3,.07*gain,'bandpass',A.currentTime+.16,pan);
+    }
+    if(m.stage==='returning'&&m.heardStage!=='returning'){
+      noise(.25,630,1.8,.21*gain,'bandpass',A.currentTime,pan);
+      noise(.17,1640,2.3,.16*gain,'bandpass',A.currentTime+.13,pan);
     }
     m.wingBeat=(m.wingBeat||0)-dt;
     if(m.stage==='perch'&&m.wingBeat<=0){
@@ -6046,7 +6070,7 @@ function conductorMesh(o,t,form,limb){
 }
 function mothMesh(o,t,form,limb){
   const dust=[113,100,79,.17],rag=[62,52,49],head=[151,134,103,.25];
-  const active=o.stage==='hunt'||o.stage==='search',sweep=o.stage==='sweep';
+  const active=o.stage==='hunt'||o.stage==='search'||o.stage==='leaving'||o.stage==='returning',sweep=o.stage==='sweep';
   const perched=o.stage==='perch';
   const flap=Math.sin(t*(active?33:sweep?25:perched?17:9));
   const dive=o.stage==='hunt'?Math.pow(Math.max(0,Math.sin(timeIn*15)),3)*(o.pressure||0):0;
