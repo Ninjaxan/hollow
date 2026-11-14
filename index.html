@@ -1727,6 +1727,8 @@ function lockerStatus(spot){
   if(spot.nearby==='gardenerSkid')return 'The Gardener skidded to a stop.';
   if(spot.nearby==='conductorStalk')return 'The Conductor’s footsteps are close.';
   if(spot.nearby==='conductorStill')return 'The Conductor is outside. Face it when you leave.';
+  if(spot.nearby==='mothPerch')return 'Wings brush the slats. Keep the lantern dark.';
+  if(spot.nearby==='mothSearch')return 'The Moth is searching near the locker.';
   if(spot.cue==='atStone')return 'It found the stone. The distraction is almost over.';
   if(spot.cue==='clear')return 'Its footsteps have moved down the hall.';
   if(spot.cue==='distracted')return 'It let go of the latch. Listen for its footsteps.';
@@ -1752,13 +1754,15 @@ function coverEncounter(field){
     if(dollNearDoor(exit.x,exit.y))encounter=Dl.music?'dollMusic':'dollStill';
   }
   if(!encounter&&manor){
-    const {gardener,conductor}=manor;
+    const {gardener,conductor,moth}=manor;
     if(gardener.stage==='charge'&&nearby(gardener,3.8))encounter='gardenerCharge';
     else if(gardener.stage==='skid'&&nearby(gardener,3.8))encounter='gardenerSkid';
     else if(nearby(conductor,3.5)){
       if(conductor.stage==='stalk')encounter='conductorStalk';
       else if(conductor.stage==='still'||conductor.stage==='rest')encounter='conductorStill';
     }
+    if(!encounter&&moth.stage==='perch'&&nearby(moth,1.8))encounter='mothPerch';
+    else if(!encounter&&['search','sweep'].includes(moth.stage)&&nearby(moth,3))encounter='mothSearch';
   }
   if(encounter==='dollStill'&&hidden.nearby!==encounter){
     const now=A.currentTime,pan=panOf(Dl);
@@ -2970,7 +2974,7 @@ function mothStep(dt){
     if(m.stage==='idle'&&m.timer===0&&target){
       m.stage='warning';m.timer=easy?1.35:1.05;
     }
-    if(m.stage==='warning'||m.stage==='hunt'||m.stage==='search'||m.stage==='sweep'){
+    if(m.stage==='warning'||m.stage==='hunt'||m.stage==='search'||m.stage==='sweep'||m.stage==='perch'){
       if(target){
         const tile=(target.x|0)+(target.y|0)*S;
         if(m.goal?.tile!==tile)m.field=bfs(target.x|0,target.y|0,true);
@@ -2978,8 +2982,18 @@ function mothStep(dt){
       }
       if(m.stage==='warning'&&m.timer===0){m.stage=target?'hunt':'search';m.timer=2.1}
       else if(m.stage==='hunt'&&!target){m.stage='search';m.timer=2.1}
-      else if((m.stage==='search'||m.stage==='sweep')&&target)m.stage='hunt';
+      else if((m.stage==='search'||m.stage==='sweep'||m.stage==='perch')&&target)m.stage='hunt';
       m.pressure=m.stage==='hunt'?Math.min(1,(m.pressure||0)+dt*.86):0;
+      if(m.stage==='perch'){
+        const perch=m.goal;
+        m.yaw=Math.atan2(perch.y-m.y,perch.x-m.x);
+        if(m.timer===0){m.stage='idle';m.timer=1.2;m.goal=null}
+        else{
+          const travel=Math.min(Math.max(0,distance(perch)-.57),dt*1.65);
+          const x=m.x+Math.cos(m.yaw)*travel,y=m.y+Math.sin(m.yaw)*travel;
+          if(!solid(x,y)){m.x=x;m.y=y}
+        }
+      }
       if(m.stage==='sweep'){
         m.yaw+=dt*4.6;
         if(m.timer===0){m.stage='idle';m.timer=1.2;m.goal=null}
@@ -2991,7 +3005,14 @@ function mothStep(dt){
       if(m.stage==='hunt'||m.stage==='search'){
         const goal=m.goal,d=distance(goal);
         if(m.stage==='search'&&d<.24){
-          m.stage='sweep';m.timer=.68;
+          const partnerCover=friendHere()&&coop.fp.st==='play'&&coop.fs.inCover?
+            lockers.find(spot=>Math.hypot(spot.x-coop.fp.p[0],spot.y-coop.fp.p[1])<.025):null;
+          const cover=[hidden,partnerCover].find(spot=>spot&&Math.hypot(spot.x-goal.x,spot.y-goal.y)<1.65&&
+            los(goal.x,goal.y,spot.x,spot.y));
+          if(cover){
+            m.stage='perch';m.timer=easy?1.45:2.1;m.goal={x:cover.x,y:cover.y};
+            m.yaw=Math.atan2(cover.y-m.y,cover.x-m.x);
+          }else{m.stage='sweep';m.timer=.68}
         }else if(m.stage==='search'&&m.timer===0){
           m.stage='idle';m.timer=1.2;m.goal=null;
         }else{
@@ -3025,8 +3046,16 @@ function mothStep(dt){
       noise(.16,1810,2.8,.15*gain,'bandpass',A.currentTime+.15,pan);
       if(!hidden&&direct&&range<4&&msgT<.7)say('It’s circling where your lantern went out.',1.45);
     }
+    if(m.stage==='perch'&&m.heardStage!=='perch'){
+      noise(.44,1550,2.8,.23*gain,'bandpass',A.currentTime,pan);
+      noise(.19,2870,4,.13*gain,'bandpass',A.currentTime+.29,pan);
+    }
     m.wingBeat=(m.wingBeat||0)-dt;
-    if((m.stage==='hunt'||m.stage==='search')&&m.wingBeat<=0){
+    if(m.stage==='perch'&&m.wingBeat<=0){
+      m.wingBeat=.51;
+      noise(.16,1160,3.4,.15*gain,'bandpass',A.currentTime,pan);
+      noise(.064,2340,4,.12*gain,'bandpass',A.currentTime+.13,pan);
+    }else if((m.stage==='hunt'||m.stage==='search')&&m.wingBeat<=0){
       const urgency=m.stage==='hunt'?m.pressure||0:0;
       m.wingBeat=.29-urgency*.15;
       noise(.105,direct?640+urgency*270:330,1.5,.24*gain,'bandpass',A.currentTime,pan);
@@ -6018,9 +6047,10 @@ function conductorMesh(o,t,form,limb){
 function mothMesh(o,t,form,limb){
   const dust=[113,100,79,.17],rag=[62,52,49],head=[151,134,103,.25];
   const active=o.stage==='hunt'||o.stage==='search',sweep=o.stage==='sweep';
-  const flap=Math.sin(t*(active?33:sweep?25:9));
+  const perched=o.stage==='perch';
+  const flap=Math.sin(t*(active?33:sweep?25:perched?17:9));
   const dive=o.stage==='hunt'?Math.pow(Math.max(0,Math.sin(timeIn*15)),3)*(o.pressure||0):0;
-  const lift=.57+.047*Math.sin(t*6)-dive*.24+(sweep?.09:0);
+  const lift=.57+.047*Math.sin(t*6)-dive*.24+(sweep?.09:perched?.16:0);
   form(ACTOR_ROUND,0,.03,lift,.063,.084,.197,rag,0,0,.24);
   form(ACTOR_ROUND,0,.10,lift+.145,.063,.054,.067,head);
   for(const side of [-1,1]){
@@ -6626,6 +6656,15 @@ function render(t){
   // inside a locker: you see the hall through thin slats
   if(hidden){
     const hh=H/7,tremor=Math.sin(t*76)*hidden.rattle*H*.012;
+    if(hidden.nearby==='mothPerch'){
+      for(let i=0;i<19;i++){
+        const phase=(hash(i,6,51)+t*(.17+hash(i,3,51)*.20))%1;
+        const x=W*(.22+hash(i,2,51)*.56)+Math.sin(t*6+i)*W*.036;
+        const size=1+hash(i,9,51)*2;
+        cx.fillStyle=`rgba(188,165,132,${.45*Math.sin(phase*Math.PI)})`;
+        cx.fillRect(x,H*(.21+phase*.56),size,size*.66);
+      }
+    }
     const lamp=LT.find(source=>source.owner===E);
     let slatLight=null;
     if(lamp&&los(P.x,P.y,E.x,E.y)){
