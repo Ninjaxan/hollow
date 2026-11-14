@@ -590,6 +590,8 @@ function buildManor(){
   const glasshouse=rooms.find(room=>room.prop==='planter');
   const windowLights=glasshouse?[19.5,22.5,25.5].map(x=>({x,y:glasshouse.bounds[1]+.36})):[];
   const windowTag={x:24.34,y:3.28,t:'glasshouseTag'};
+  const gardener={x:25.5,y:4.5,t:'gardener',stage:'waiting',yaw:Math.PI,timer:0};
+  const conductor={x:25.5,y:13.5,t:'conductor',stage:'waiting',yaw:Math.PI,timer:0};
   lamps.push({x:12.55,y:16.8,t:'annexLamp'},{x:16.45,y:9.4,t:'annexLamp'},{x:13.65,y:2.7,t:'annexLamp'});
   for(const lamp of lamps)lamp.t='manorLantern';
   const furniture=rooms.map(r=>({x:r.clue.x,y:r.clue.y-.20,t:'manorFurniture',kind:r.prop}));
@@ -607,8 +609,8 @@ function buildManor(){
     {x:37.15,y:30.71,t:'manorFurniture',kind:'books',a:-Math.PI/2},{x:41.79,y:29.7,t:'manorFurniture',kind:'books',a:Math.PI},
     {x:35.18,y:26.22,t:'manorFurniture',kind:'portrait'},{x:40.78,y:28.61,t:'manorFurniture',kind:'desk'}
   );
-  const hearth=furniture.find(prop=>prop.kind==='hearth');
-  return {rooms,tiles,lamps,windowLights,windowTag,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,study,potting,service,post,
+  const hearth=furniture.find(prop=>prop.kind==='hearth'),piano=furniture.find(prop=>prop.kind==='piano');
+  return {rooms,tiles,lamps,windowLights,windowTag,gardener,conductor,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,piano,study,potting,service,post,
     swings:[study.swing,potting.swing,service.swing,post.swing],active:-1,pin:null,mapRevision:0,route:null};
 }
 function newGame(fl,bat=100,tries=0){
@@ -819,6 +821,8 @@ function buildSprites(){
   if(manor){
     sprites.push(...manor.lamps,...manor.furniture,...manor.rooms.map(r=>r.clue));
     sprites.push(manor.windowTag);
+    if(manor.gardener.stage!=='waiting')sprites.push(manor.gardener);
+    if(manor.conductor.stage!=='waiting')sprites.push(manor.conductor);
     sprites.push(...manor.frames.filter(frame=>!frame.door||frame.door.open));
     if(!manor.study.open)sprites.push(manor.study.shelf,...manor.study.books);
     if(!manor.potting.open)sprites.push(manor.potting.swing.panel,...manor.potting.buttons);
@@ -1056,6 +1060,10 @@ function netSend(){
   if(manor?.post.stage)p.ml=manor.post.stage;
   p.lw=stair?.watch.open?(stair.watch.lit?2:1):null;
   if(coop.role==='host'){
+    const gardener=manor?.gardener;
+    if(gardener)p.gd=[r2(gardener.x),r2(gardener.y),gardener.yaw,gardener.stage,r2(gardener.timer)];
+    const conductor=manor?.conductor;
+    if(conductor)p.cd=[r2(conductor.x),r2(conductor.y),conductor.yaw,conductor.stage,r2(conductor.timer)];
     p.e=[r2(E.x),r2(E.y),+!!E.bend,+!!E.chase,+!!E.mv,r2(E.windup||0),E.braceYaw??null];p.cg=coop.cg||0;p.ct=coop.ct||null;p.cf=coop.cf||null;
     p.nm=+nightmare;p.ez=+easy;
     p.lk=coop.fs?.h?lockerSignal(coop.fs):null;
@@ -1161,8 +1169,17 @@ function netRecv(dt){
     E.braceYaw=Number.isFinite(q.e[6])?q.e[6]:null;
     if(typeof q.cg==='number'){
       const previous=coop.lastCg;coop.lastCg=q.cg;
-      if(previous!==undefined&&q.cg>previous&&(q.cf==null||q.cf===floor))caught(q.ct==='C'||q.ct==='D'?q.ct:'E');
+      if(previous!==undefined&&q.cg>previous&&(q.cf==null||q.cf===floor))caught(Object.hasOwn(CATCH_NAMES,q.ct)?q.ct:'E');
     }
+  }
+  if(coop.role==='guest'&&manor&&Array.isArray(q.gd)){
+    const [x,y,yaw,stage,timer]=q.gd;
+    const gardener=manor.gardener;
+    Object.assign(gardener,{x:gardener.x+(x-gardener.x)*k,y:gardener.y+(y-gardener.y)*k,yaw,stage,timer:timer??0});
+  }
+  if(coop.role==='guest'&&manor&&Array.isArray(q.cd)){
+    const [x,y,yaw,stage,timer]=q.cd,c=manor.conductor;
+    Object.assign(c,{x:c.x+(x-c.x)*k,y:c.y+(y-c.y)*k,yaw,stage,timer:timer??0});
   }
 }
 
@@ -1698,6 +1715,10 @@ function lockerStatus(spot){
   if(spot.nearby==='crawlerPass')return 'Claws scrape across the ceiling.';
   if(spot.nearby==='dollStill')return 'The music stopped. The Doll will hear you leave.';
   if(spot.nearby==='dollMusic')return Dl.warn?'The tune is slowing. Stay hidden.':'The music box is playing. You can slip out.';
+  if(spot.nearby==='gardenerCharge')return 'The Gardener is charging past. Stay inside.';
+  if(spot.nearby==='gardenerSkid')return 'The Gardener skidded to a stop.';
+  if(spot.nearby==='conductorStalk')return 'The Conductor’s footsteps are close.';
+  if(spot.nearby==='conductorStill')return 'The Conductor is outside. Face it when you leave.';
   if(spot.cue==='atStone')return 'It found the stone. The distraction is almost over.';
   if(spot.cue==='clear')return 'Its footsteps have moved down the hall.';
   if(spot.cue==='distracted')return 'It let go of the latch. Listen for its footsteps.';
@@ -1721,6 +1742,15 @@ function coverEncounter(field){
   else if(Dl){
     const exit=lockerExit(hidden)||hidden;
     if(dollNearDoor(exit.x,exit.y))encounter=Dl.music?'dollMusic':'dollStill';
+  }
+  if(!encounter&&manor){
+    const {gardener,conductor}=manor;
+    if(gardener.stage==='charge'&&nearby(gardener,3.8))encounter='gardenerCharge';
+    else if(gardener.stage==='skid'&&nearby(gardener,3.8))encounter='gardenerSkid';
+    else if(nearby(conductor,3.5)){
+      if(conductor.stage==='stalk')encounter='conductorStalk';
+      else if(conductor.stage==='still'||conductor.stage==='rest')encounter='conductorStill';
+    }
   }
   if(encounter==='dollStill'&&hidden.nearby!==encounter){
     const now=A.currentTime,pan=panOf(Dl);
@@ -2905,11 +2935,128 @@ function dollStep(dt,Dp,soundField=Dp){
   if(f2&&Math.hypot(Dl.x-f2.x,Dl.y-f2.y)<.5)catchFriend('D');
   if(papa&&papa.st==='follow'&&Math.hypot(Dl.x-papa.x,Dl.y-papa.y)<.5){dollAway();papaTaken()}
 }
-const CATCH_NAMES={E:'The Lamplighter',C:'The Crawler',D:'The doll'};
+const CATCH_NAMES={E:'The Lamplighter',C:'The Crawler',D:'The doll',G:'The Gardener',M:'The Conductor'};
 function moveCreatureAway(kind){
   if(kind==='E')sendCreatureAway();
   if(kind==='C')crawlAway();
   if(kind==='D')dollAway();
+  if(kind==='G'&&manor)Object.assign(manor.gardener,{stage:'recover',timer:5});
+  if(kind==='M'&&manor)Object.assign(manor.conductor,{stage:'rest',timer:4});
+}
+function conductorStep(dt){
+  const c=manor.conductor;
+  if(coop?.role!=='guest'){
+    if(c.stage==='waiting'){
+      if(!sigils.some(s=>s.room===4&&s.got))return;
+      c.stage='warning';c.timer=1.18;
+    }else if(c.stage==='warning'||c.stage==='rest'){
+      c.timer-=dt;
+      if(c.timer<=0)c.stage=c.stage==='rest'?'still':'stalk';
+    }else{
+      const distance=o=>Math.hypot(o.x-c.x,o.y-c.y);
+      const partner=friendHere()&&coop.fp.st==='play'&&!coop.fs.inCover?coop.fs:null;
+      const targets=[hidden||escapeGrace>0?null:P,partner].filter(o=>o&&distance(o)<6.5&&los(c.x,c.y,o.x,o.y));
+      const watched=targets.some(o=>{
+        const [side,depth]=camSpaceFrom(o,c);
+        return depth>.08&&Math.abs(side)<depth*.78;
+      });
+      const target=targets.sort((a,b)=>distance(a)-distance(b))[0];
+      c.stage=target&&!watched?'stalk':'still';
+      if(c.stage==='stalk'){
+        const d=distance(target);
+        c.yaw=Math.atan2(target.y-c.y,target.x-c.x);
+        const travel=Math.min(d,(easy?1.82:nightmare?3.18:2.48)*dt);
+        if(d>.01){
+          const x=c.x+Math.cos(c.yaw)*travel,y=c.y+Math.sin(c.yaw)*travel;
+          if(!solid(x,y)){c.x=x;c.y=y}
+        }
+        if(distance(target)<.48){
+          if(target===partner)catchFriend('M');else caught('M');
+        }
+      }
+    }
+  }
+  if(!A)return;
+  const piano=manor.piano;
+  if(c.stage==='warning'&&piano&&Math.hypot(P.x-piano.x,P.y-piano.y)<8){
+    const age=1.18-c.timer;
+    const note=age>=.51?2:age>=.10?1:0;
+    if(note>(c.pianoNote||0)){
+      c.pianoNote=note;
+      const t=A.currentTime,pan=panOf(piano);
+      const gain=los(P.x,P.y,piano.x,piano.y)?1:.36,f=note===1?329.63:246.94;
+      tone(f,.52,.105*gain,'triangle',t,f*.998,pan);
+      tone(f*2.01,.21,.028*gain,'sine',t,undefined,pan);
+      noise(.065,1340,2,.065*gain,'bandpass',t,pan);
+    }
+  }
+  if(Math.hypot(P.x-c.x,P.y-c.y)>8)return;
+  const t=A.currentTime,pan=panOf(c);
+  if(c.stage!=='waiting'&&!c.warned){
+    c.warned=true;
+    say('The Conductor stops when you look at it.',3);
+  }
+  c.beat=c.stage==='stalk'?(c.beat||0)-dt:0;
+  if(c.stage==='stalk'&&c.beat<=0){
+    c.beat=.28;
+    noise(.042,1260,5,.17,'bandpass',t,pan);
+    noise(.09,213,1.7,.12,'lowpass',t+.04,pan);
+  }
+}
+function gardenerStep(dt){
+  const g=manor.gardener;
+  if(coop?.role!=='guest'){
+    const partner=friendHere()&&coop.fp.st==='play'&&!coop.fs.inCover?coop.fs:null;
+    const candidates=[!hidden&&escapeGrace<=0?P:null,partner].filter(Boolean);
+    const distance=o=>Math.hypot(o.x-g.x,o.y-g.y);
+    if(g.stage==='waiting'&&sigils.some(s=>s.room===6&&s.got)){
+      g.stage='watch';
+      clicks(panOf(g),.18);
+    }
+    if(g.stage==='watch'){
+      const target=candidates.filter(o=>distance(o)<5.3&&los(g.x,g.y,o.x,o.y)).sort((a,b)=>distance(a)-distance(b))[0];
+      if(target){
+        g.yaw=Math.atan2(target.y-g.y,target.x-g.x);
+        g.stage='windup';g.timer=easy?1.25:nightmare?.75:.98;
+      }
+    }else if(g.stage==='windup'){
+      g.timer-=dt;
+      if(g.timer<=0){g.stage='charge';g.timer=.76}
+    }else if(g.stage==='charge'){
+      g.timer-=dt;
+      const x=g.x+Math.cos(g.yaw)*5.6*dt,y=g.y+Math.sin(g.yaw)*5.6*dt;
+      if(g.timer<=0||solid(x,y)){
+        g.stage='skid';g.timer=.46;
+      }else{
+        g.x=x;g.y=y;
+        if(partner&&distance(partner)<.55)catchFriend('G');
+        else if(candidates.includes(P)&&distance(P)<.55)caught('G');
+      }
+    }else if(g.stage==='skid'){
+      g.timer-=dt;
+      const travel=2.4*Math.max(0,g.timer/.46)*dt;
+      const x=g.x+Math.cos(g.yaw)*travel,y=g.y+Math.sin(g.yaw)*travel;
+      if(!solid(x,y)){g.x=x;g.y=y}
+      if(g.timer<=0){g.stage='recover';g.timer=2.24}
+    }else if(g.stage==='recover'){
+      g.timer-=dt;
+      if(g.timer<=0)g.stage='watch';
+    }
+  }
+  if(g.stage!==g.heardStage){
+    g.heardStage=g.stage;
+    if(A&&Math.hypot(P.x-g.x,P.y-g.y)<7){
+      const t=A.currentTime,pan=panOf(g);
+      if(g.stage==='windup'){
+        noise(.52,390,3,.20,'bandpass',t,pan);
+        noise(.22,1090,4,.14,'bandpass',t+.24,pan);
+        if(!hidden&&los(P.x,P.y,g.x,g.y))say('The Gardener braces. Step sideways.',1.35);
+      }else if(g.stage==='skid'){
+        noise(.34,420,2.8,.23,'bandpass',t,pan);
+        noise(.19,1280,4,.11,'bandpass',t+.09,pan);
+      }else if(g.stage==='recover')noise(.25,130,1.1,.17,'lowpass',t,pan);
+    }
+  }
 }
 function catchFriend(kind){
   if(coop.friendCatchWait>0)return;
@@ -4252,6 +4399,10 @@ function update(dt){
   }
 
   if(Dl){dollStep(dt,Dp,soundField);if(escapeGrace<=0&&(!coop||coop.role==='host')&&!hidden&&Math.hypot(Dl.x-P.x,Dl.y-P.y)<.5){caught('D');return}}
+  if(manor){
+    gardenerStep(dt);if(state!=='play')return;
+    conductorStep(dt);if(state!=='play')return;
+  }
   coverEncounter(Dp);
 
   // sudden "it's right there" sting
@@ -4261,7 +4412,9 @@ function update(dt){
   wasSeen=seen;
 
   const crawlerDistance=C?Dp[(C.x|0)+(C.y|0)*S]:-1,dollDistance=Dl?Dp[(Dl.x|0)+(Dl.y|0)*S]:-1;
-  const inChase=(E.chase&&pd>=0&&pd<=9)||((C?.hunt||C?.drop)&&crawlerDistance>=0&&crawlerDistance<=8)||(Dl?.angry>0&&dollDistance>=0&&dollDistance<=9);
+  const gardener=manor?.gardener;
+  const gardenerNear=gardener&&(gardener.stage==='windup'||gardener.stage==='charge')&&Math.hypot(P.x-gardener.x,P.y-gardener.y)<7;
+  const inChase=gardenerNear||(E.chase&&pd>=0&&pd<=9)||((C?.hunt||C?.drop)&&crawlerDistance>=0&&crawlerDistance<=8)||(Dl?.angry>0&&dollDistance>=0&&dollDistance<=9);
   if(inChase){stopFollower();ghost=null}else updateFollower(dt,stepped,walking,pd);
   // heartbeat
   beatT-=dt;if(pd>=0&&pd<9&&beatT<=0){thump(.12+(9-pd)*.04);beatT=E.chase?.2:.35+pd*.11}
@@ -4665,6 +4818,21 @@ function drawCeilingDust(fall,warning,hz,crawler=false){
     cx.fillRect(x,y,size,size*(warn?1.8:1));
   }
 }
+function drawGardenerSkid(g,hz){
+  if(g?.stage!=='skid')return;
+  const age=Math.max(0,Math.min(1,1-g.timer/.46));
+  const dx=Math.cos(g.yaw),dy=Math.sin(g.yaw);
+  for(let i=0;i<16;i++){
+    const spread=(hash(i,15,3)-.5)*(.29+age*.75),trail=hash(i,29,7)*(.14+age*.83);
+    const [side,z]=camSpace({x:g.x-dx*trail-dy*spread,y:g.y-dy*trail+dx*spread});
+    if(z<=.15)continue;
+    const x=W*.5*(1+side/z),y=hz+WS/z*(.49-Math.sin(age*Math.PI)*hash(i,7,8)*.093);
+    if(x<0||x>=W||y<0||y>=H||z>=zbuf[x|0]||objectDepth[(y|0)*W+(x|0)]>1/z)continue;
+    const size=Math.max(1,Math.min(3,WS/z*.008));
+    cx.fillStyle=`rgba(185,196,166,${(1-age)*.56})`;
+    cx.fillRect(x,y,size,size*.7);
+  }
+}
 function drawCrawlerScrapes(c,t,hz){
   if(!c||c.drop||c.sniff>0||(!c.hunt&&!(c.reveal>0)))return;
   if(Math.hypot(c.x-P.x,c.y-P.y)>7)return;
@@ -4758,7 +4926,7 @@ const DOLL_SKIRT=ringMesh(
   });
 const DOLL_BOX=ringMesh([[-1,0],[-1,.86],[-.76,1],[.72,1],[1,.88],[1,0]],4);
 ACTOR_BRICK.flat=DOLL_BOX.flat=true;
-const ACTORS=new Set(['ent','crawl','doll','mara','nell','papa','friend','mobile','pet']);
+const ACTORS=new Set(['ent','crawl','doll','mara','nell','papa','friend','mobile','pet','gardener','conductor']);
 const ACTOR_POSES=new WeakMap();
 function actorPose(o,t){
   const look=Math.atan2(P.y-o.y,P.x-o.x);
@@ -5363,6 +5531,19 @@ function manorFurnitureMesh(o,form,t){
     box(0,.349,.464,.80,.026,.031,FURNITURE_TRIM);
     box(0,.043,.735,.69,.019,.153,PIANO_CASE);
     box(0,.075,.791,.25,.035,.12,FURNITURE_DARK);
+    const conductor=manor?.conductor;
+    if(conductor?.stage==='warning'){
+      const age=1.18-conductor.timer;
+      const second=age>=.51;
+      const held=age-(second?.51:.10);
+      if(held>=0&&held<.26){
+        const x=second?-.31:.12;
+        box(x,.278,.517,.015,.065,.012,[104,91,73,.19]);
+        box(x,.355,.490,.016,.008,.012,[184,147,103,.20]);
+      }
+      const knock=Math.max(0,.055-held*.20);
+      box(0,.078,.917+knock,.257,.039,.012,FURNITURE_TRIM);
+    }
     for(const side of [-1,1]){
       box(side*.754,.283,.254,.049,.051,.230,PIANO_CASE);
       box(side*.802,.18,.522,.064,.181,.058,FURNITURE_DARK);
@@ -5696,6 +5877,51 @@ function wispMesh(o,t,form){
     form(ACTOR_ROUND,side*.057*size,.189*size,.43*size,.014*size,.012*size,.020*size,[82,64,51,.55]);
   }
 }
+function gardenerMesh(o,t,form,limb){
+  const cloth=[47,55,37],seam=[79,79,54],wood=[103,88,62],iron=[103,116,98,.24];
+  const attacking=o.stage==='charge',braced=o.stage==='windup',skid=o.stage==='skid';
+  const weight=braced?Math.min(1,Math.max(0,1-o.timer/(easy?1.25:nightmare?.75:.98))):0;
+  const lean=attacking?.27:skid?-.22:weight*.22;
+  const crouch=braced?weight*.083:skid?.065:0;
+  const step=attacking?Math.sin(t*25):0;
+  form(LAMPLIGHTER_SHROUD,0,lean*.42,.43-crouch,.21,.13,.42,cloth,step*.10,0,lean);
+  for(const side of [-1,1]){
+    const foot=[side*(.12+weight*.044),step*.19*side+(skid?.16:weight*.12*side),.042+Math.max(0,step*side)*.08];
+    limb([side*.10,0,.43],foot,.057,cloth);
+    form(ACTOR_ROUND,...foot,.075,.106,.046,seam);
+    const shoulder=[side*.16,lean,.74-crouch],hand=[side*.22,lean+.14,.40];
+    limb(shoulder,[side*.28,.03,.55],.044,cloth);
+    limb([side*.28,.03,.55],hand,.038,seam);
+    form(ACTOR_ROUND,...hand,.044,.044,.051,wood);
+  }
+  form(ACTOR_CLOTH,0,lean+.02,.85-crouch,.14,.095,.16,seam);
+  form(ACTOR_ROUND,0,lean+.091,.86-crouch,.088,.049,.10,wood);
+  for(const side of [-1,1])form(ACTOR_ROUND,side*.04,lean+.134,.877-crouch,.017,.008,.014,[21,22,17,.46]);
+  form(ACTOR_ROUND,0,lean+.017,.99-crouch,.193,.128,.020,cloth);
+  form(ACTOR_CLOTH,.018,lean+.011,1.047-crouch,.102,.079,.072,seam,.14);
+  limb([.23,lean+.14,.28],[.23,lean+.14,.70],.014,wood);
+  for(const x of [.19,.23,.27])limb([x,lean+.14,.68],[x,lean+.22,.83],.012,iron);
+}
+function conductorMesh(o,t,form,limb){
+  const wool=[38,32,43],velvet=[76,46,58],porcelain=[166,151,127,.19];
+  const walking=o.stage==='stalk',beat=walking?Math.sin(t*22):0;
+  const lean=walking?.11:0,handZ=.66+beat*.085;
+  form(LAMPLIGHTER_SHROUD,0,lean,.47,.145,.085,.48,wool,beat*.08,0,lean);
+  for(const side of [-1,1]){
+    const foot=[side*.069,side*beat*.108,.045];
+    limb([side*.056,0,.43],foot,.031,wool);
+    form(ACTOR_ROUND,...foot,.047,.077,.032,wool);
+    form(ACTOR_CLOTH,side*.061,.072,.79,.038,.019,.091,velvet,-side*.42);
+    const elbow=[side*.178,.037,.62],hand=[side*.132,.15,side===1?handZ:.53];
+    limb([side*.108,lean,.83],elbow,.030,wool);
+    limb(elbow,hand,.025,velvet);
+    form(ACTOR_ROUND,...hand,.021,.023,.025,porcelain);
+  }
+  form(ACTOR_ROUND,0,lean*.57,.955,.061,.056,.105,wool);
+  form(PLAYER_HEAD,0,.043+lean*.57,.962,.055,.032,.087,porcelain,-beat*.055);
+  for(const side of [-1,1])form(ACTOR_ROUND,side*.023,.072+lean*.57,.980,.013,.008,.015,[24,19,23,.30]);
+  limb([.133,.15,handZ],[.195,.218,handZ+.19],.008,[167,147,109,.22]);
+}
 function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   const furniture=o.t==='manorFurniture'||o.t==='manorFrame';
   const radius=o.t==='manorFrame'?o.width*.55:furniture?1:o.t==='manorLantern'?.13:o.t==='ent'?.80:o.t==='crawl'?.53:o.t==='pet'?.21:.43;
@@ -5748,6 +5974,8 @@ function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   else if(o.t==='crawl')crawlerMesh(o,pose,t,form,limb);
   else if(o.t==='mobile')nurseryMobileMesh(t,form,limb);
   else if(o.t==='pet')wispMesh(o,t,form);
+  else if(o.t==='gardener')gardenerMesh(o,t,form,limb);
+  else if(o.t==='conductor')conductorMesh(o,t,form,limb);
   else if(o.t==='friend')playerMesh(o,pose,t,form,limb);
   else humanMesh(o,pose,t,form,limb);
 }
@@ -6131,7 +6359,8 @@ function render(t){
     const pos=o===C&&drop?{x:o.x+(drop.x-o.x)*descent,y:o.y+(drop.y-o.y)*descent}:o;
     const [tx,ty]=camSpace(pos),actor=ACTORS.has(o.t);
     const furniture=o.t==='manorFrame'||o.t==='manorFurniture'&&MANOR_FURNITURE_3D.has(o.kind);
-    return {o,tx,ty,pose:furniture||o.t==='manorLantern'?{yaw:o.a??Math.PI/2}:actor?actorPose(o,t):null};
+    const fixed=o.t==='gardener'||o.t==='conductor';
+    return {o,tx,ty,pose:fixed?{yaw:o.yaw}:furniture||o.t==='manorLantern'?{yaw:o.a??Math.PI/2}:actor?actorPose(o,t):null};
   }).filter(s=>s.pose?s.ty>-.34&&Math.abs(s.tx)<Math.max(0,s.ty)+(s.o.t==='manorFrame'?1.9:1.1):s.ty>.12).sort((a,b)=>b.ty-a.ty);
   objectDepth.fill(0);
   drawManorFurnitureShadows(hz);
@@ -6247,6 +6476,7 @@ function render(t){
     }
   }
   cx.putImageData(img,0,0);
+  drawGardenerSkid(manor?.gardener,hz);
   drawCeilingDust(finale?.fall,fallWarning(),hz);
   drawCeilingDust(drop,crawlerWarning(),hz,true);
   drawCrawlerScrapes(C,t,hz);
@@ -6934,6 +7164,27 @@ function drawScare(now){
   }
   cx.fillRect(0,0,W,H);
   if(elapsed>=.94)return;
+  if(catchKind==='M'){
+    const size=Math.min(W,H)*(.38+Math.min(1,elapsed*5)*.35);
+    cx.fillStyle='#b2a188';
+    cx.beginPath();cx.ellipse(W/2,H*.49,size*.26,size*.44,-.11,0,Math.PI*2);cx.fill();
+    cx.fillStyle='#1f171d';
+    for(const side of [-1,1]){
+      cx.beginPath();cx.ellipse(W/2+side*size*.11,H*.43,size*.050,size*.068,side*-.35,0,Math.PI*2);cx.fill();
+    }
+    return;
+  }
+  if(catchKind==='G'){
+    const scale=Math.min(W,H),size=scale*(.54+Math.min(1,elapsed*4)*.25);
+    cx.fillStyle='#66634a';
+    cx.beginPath();cx.ellipse(W/2,H*.49,size*.39,size*.49,0,0,Math.PI*2);cx.fill();
+    cx.fillStyle='#181b14';
+    cx.fillRect(W/2-size*.57,H*.23,size*1.14,size*.074);
+    for(const side of [-1,1]){
+      cx.beginPath();cx.ellipse(W/2+side*size*.16,H*.44,size*.062,size*.048,side*.24,0,Math.PI*2);cx.fill();
+    }
+    return;
+  }
   const crawler=catchKind==='C',doll=catchKind==='D';
   const picture=crawler?ART.crawl.img:doll?ART.dollFace:ART.face;
   const img=picture.complete&&picture.naturalWidth?picture:catchKind==='E'?face:null;
