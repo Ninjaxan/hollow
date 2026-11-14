@@ -592,6 +592,7 @@ function buildManor(){
   const windowTag={x:24.34,y:3.28,t:'glasshouseTag'};
   const gardener={x:25.5,y:4.5,t:'gardener',stage:'waiting',yaw:Math.PI,timer:0};
   const conductor={x:25.5,y:13.5,t:'conductor',stage:'waiting',yaw:Math.PI,timer:0};
+  const moth={x:3.5,y:14.5,t:'moth',stage:'waiting',yaw:0,timer:0,goal:null};
   lamps.push({x:12.55,y:16.8,t:'annexLamp'},{x:16.45,y:9.4,t:'annexLamp'},{x:13.65,y:2.7,t:'annexLamp'});
   for(const lamp of lamps)lamp.t='manorLantern';
   const furniture=rooms.map(r=>({x:r.clue.x,y:r.clue.y-.20,t:'manorFurniture',kind:r.prop}));
@@ -610,7 +611,7 @@ function buildManor(){
     {x:35.18,y:26.22,t:'manorFurniture',kind:'portrait'},{x:40.78,y:28.61,t:'manorFurniture',kind:'desk'}
   );
   const hearth=furniture.find(prop=>prop.kind==='hearth'),piano=furniture.find(prop=>prop.kind==='piano');
-  return {rooms,tiles,lamps,windowLights,windowTag,gardener,conductor,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,piano,study,potting,service,post,
+  return {rooms,tiles,lamps,windowLights,windowTag,gardener,conductor,moth,storm:{next:5,age:2,ripples:[]},furniture,frames,hearth,piano,study,potting,service,post,
     swings:[study.swing,potting.swing,service.swing,post.swing],active:-1,pin:null,mapRevision:0,route:null};
 }
 function newGame(fl,bat=100,tries=0){
@@ -823,6 +824,7 @@ function buildSprites(){
     sprites.push(manor.windowTag);
     if(manor.gardener.stage!=='waiting')sprites.push(manor.gardener);
     if(manor.conductor.stage!=='waiting')sprites.push(manor.conductor);
+    if(manor.moth.stage!=='waiting')sprites.push(manor.moth);
     sprites.push(...manor.frames.filter(frame=>!frame.door||frame.door.open));
     if(!manor.study.open)sprites.push(manor.study.shelf,...manor.study.books);
     if(!manor.potting.open)sprites.push(manor.potting.swing.panel,...manor.potting.buttons);
@@ -1064,6 +1066,8 @@ function netSend(){
     if(gardener)p.gd=[r2(gardener.x),r2(gardener.y),gardener.yaw,gardener.stage,r2(gardener.timer)];
     const conductor=manor?.conductor;
     if(conductor)p.cd=[r2(conductor.x),r2(conductor.y),conductor.yaw,conductor.stage,r2(conductor.timer)];
+    const moth=manor?.moth;
+    if(moth)p.moth=[r2(moth.x),r2(moth.y),moth.yaw,moth.stage,r2(moth.pressure||0),r2(moth.timer)];
     p.e=[r2(E.x),r2(E.y),+!!E.bend,+!!E.chase,+!!E.mv,r2(E.windup||0),E.braceYaw??null];p.cg=coop.cg||0;p.ct=coop.ct||null;p.cf=coop.cf||null;
     p.nm=+nightmare;p.ez=+easy;
     p.lk=coop.fs?.h?lockerSignal(coop.fs):null;
@@ -1180,6 +1184,10 @@ function netRecv(dt){
   if(coop.role==='guest'&&manor&&Array.isArray(q.cd)){
     const [x,y,yaw,stage,timer]=q.cd,c=manor.conductor;
     Object.assign(c,{x:c.x+(x-c.x)*k,y:c.y+(y-c.y)*k,yaw,stage,timer:timer??0});
+  }
+  if(coop.role==='guest'&&manor&&Array.isArray(q.moth)){
+    const [x,y,yaw,stage,pressure,timer]=q.moth,m=manor.moth;
+    Object.assign(m,{x:m.x+(x-m.x)*k,y:m.y+(y-m.y)*k,yaw,stage,pressure:pressure??0,timer:timer??0});
   }
 }
 
@@ -2935,13 +2943,97 @@ function dollStep(dt,Dp,soundField=Dp){
   if(f2&&Math.hypot(Dl.x-f2.x,Dl.y-f2.y)<.5)catchFriend('D');
   if(papa&&papa.st==='follow'&&Math.hypot(Dl.x-papa.x,Dl.y-papa.y)<.5){dollAway();papaTaken()}
 }
-const CATCH_NAMES={E:'The Lamplighter',C:'The Crawler',D:'The doll',G:'The Gardener',M:'The Conductor'};
+const CATCH_NAMES={E:'The Lamplighter',C:'The Crawler',D:'The doll',G:'The Gardener',M:'The Conductor',H:'The Moth'};
 function moveCreatureAway(kind){
   if(kind==='E')sendCreatureAway();
   if(kind==='C')crawlAway();
   if(kind==='D')dollAway();
   if(kind==='G'&&manor)Object.assign(manor.gardener,{stage:'recover',timer:5});
   if(kind==='M'&&manor)Object.assign(manor.conductor,{stage:'rest',timer:4});
+  if(kind==='H'&&manor)Object.assign(manor.moth,{stage:'idle',timer:4,goal:null});
+}
+function mothStep(dt){
+  const m=manor.moth;
+  if(coop?.role!=='guest'){
+    if(m.stage!=='waiting'&&m.stage!=='idle'&&!m.goal)m.stage='idle';
+    if(m.stage==='waiting'){
+      if(!sigils.some(s=>s.room===3&&s.got))return;
+      m.stage='idle';
+    }
+    m.timer=Math.max(0,m.timer-dt);
+    const friend=friendHere()&&coop.fp.st==='play'&&!coop.fs.inCover?coop.fs:null;
+    const local=!hidden&&escapeGrace<=0?P:null;
+    const distance=o=>Math.hypot(o.x-m.x,o.y-m.y);
+    const sees=o=>o&&distance(o)<8&&los(m.x,m.y,o.x,o.y);
+    let target=local&&light.on&&light.bat>0&&lampStrength()>.1&&sees(local)?local:null;
+    if(friend?.l&&sees(friend)&&(!target||distance(friend)<distance(target)))target=friend;
+    if(m.stage==='idle'&&m.timer===0&&target){
+      m.stage='warning';m.timer=easy?1.35:1.05;
+    }
+    if(m.stage==='warning'||m.stage==='hunt'||m.stage==='search'||m.stage==='sweep'){
+      if(target){
+        const tile=(target.x|0)+(target.y|0)*S;
+        if(m.goal?.tile!==tile)m.field=bfs(target.x|0,target.y|0,true);
+        m.goal={x:target.x,y:target.y,tile};
+      }
+      if(m.stage==='warning'&&m.timer===0){m.stage=target?'hunt':'search';m.timer=2.1}
+      else if(m.stage==='hunt'&&!target){m.stage='search';m.timer=2.1}
+      else if((m.stage==='search'||m.stage==='sweep')&&target)m.stage='hunt';
+      m.pressure=m.stage==='hunt'?Math.min(1,(m.pressure||0)+dt*.86):0;
+      if(m.stage==='sweep'){
+        m.yaw+=dt*4.6;
+        if(m.timer===0){m.stage='idle';m.timer=1.2;m.goal=null}
+        else{
+          const x=m.x+Math.cos(m.yaw)*dt*1.35,y=m.y+Math.sin(m.yaw)*dt*1.35;
+          if(!solid(x,y)){m.x=x;m.y=y}
+        }
+      }
+      if(m.stage==='hunt'||m.stage==='search'){
+        const goal=m.goal,d=distance(goal);
+        if(m.stage==='search'&&d<.24){
+          m.stage='sweep';m.timer=.68;
+        }else if(m.stage==='search'&&m.timer===0){
+          m.stage='idle';m.timer=1.2;m.goal=null;
+        }else{
+          let next=goal;
+          if(!los(m.x,m.y,goal.x,goal.y)){
+            const x=m.x|0,y=m.y|0,current=m.field[x+y*S];
+            const step=DIRS.find(([dx,dy])=>m.field[x+dx+(y+dy)*S]===current-1&&current>0);
+            if(step)next={x:x+step[0]+.5,y:y+step[1]+.5};
+          }
+          m.yaw=Math.atan2(next.y-m.y,next.x-m.x);
+          const surge=Math.pow(Math.max(0,Math.sin(timeIn*15)),3);
+          const pace=m.stage==='search'?2.65:(easy?2.4:nightmare?3.05:2.75)+m.pressure*surge*(easy?.65:1.28);
+          const travel=Math.min(distance(next),pace*dt);
+          const x=m.x+Math.cos(m.yaw)*travel,y=m.y+Math.sin(m.yaw)*travel;
+          if(!solid(x,y)){m.x=x;m.y=y}
+          if(local&&distance(local)<.51&&los(m.x,m.y,local.x,local.y))caught('H');
+          else if(friend&&distance(friend)<.51&&los(m.x,m.y,friend.x,friend.y))catchFriend('H');
+        }
+      }
+    }
+  }
+  if(A&&Math.hypot(P.x-m.x,P.y-m.y)<8){
+    const range=Math.hypot(P.x-m.x,P.y-m.y),pan=panOf(m);
+    const direct=los(P.x,P.y,m.x,m.y),gain=(1-range/8)*(direct?1:.40);
+    if(m.stage==='warning'&&m.heardStage!=='warning'){
+      noise(.75,590,2.8,.23,'bandpass',A.currentTime,pan);
+      if(!hidden)say('The Moth follows the lantern. Put it out and move.',3);
+    }
+    if(m.stage==='sweep'&&m.heardStage!=='sweep'){
+      noise(.38,340,1.8,.27*gain,'bandpass',A.currentTime,pan);
+      noise(.16,1810,2.8,.15*gain,'bandpass',A.currentTime+.15,pan);
+      if(!hidden&&direct&&range<4&&msgT<.7)say('It’s circling where your lantern went out.',1.45);
+    }
+    m.wingBeat=(m.wingBeat||0)-dt;
+    if((m.stage==='hunt'||m.stage==='search')&&m.wingBeat<=0){
+      const urgency=m.stage==='hunt'?m.pressure||0:0;
+      m.wingBeat=.29-urgency*.15;
+      noise(.105,direct?640+urgency*270:330,1.5,.24*gain,'bandpass',A.currentTime,pan);
+      if(urgency>.45)noise(.078,2160,3,.12*gain,'bandpass',A.currentTime+.032,pan);
+    }
+  }
+  m.heardStage=m.stage;
 }
 function conductorStep(dt){
   const c=manor.conductor;
@@ -4402,6 +4494,7 @@ function update(dt){
   if(manor){
     gardenerStep(dt);if(state!=='play')return;
     conductorStep(dt);if(state!=='play')return;
+    mothStep(dt);if(state!=='play')return;
   }
   coverEncounter(Dp);
 
@@ -4926,7 +5019,7 @@ const DOLL_SKIRT=ringMesh(
   });
 const DOLL_BOX=ringMesh([[-1,0],[-1,.86],[-.76,1],[.72,1],[1,.88],[1,0]],4);
 ACTOR_BRICK.flat=DOLL_BOX.flat=true;
-const ACTORS=new Set(['ent','crawl','doll','mara','nell','papa','friend','mobile','pet','gardener','conductor']);
+const ACTORS=new Set(['ent','crawl','doll','mara','nell','papa','friend','mobile','pet','gardener','conductor','moth']);
 const ACTOR_POSES=new WeakMap();
 function actorPose(o,t){
   const look=Math.atan2(P.y-o.y,P.x-o.x);
@@ -5922,6 +6015,22 @@ function conductorMesh(o,t,form,limb){
   for(const side of [-1,1])form(ACTOR_ROUND,side*.023,.072+lean*.57,.980,.013,.008,.015,[24,19,23,.30]);
   limb([.133,.15,handZ],[.195,.218,handZ+.19],.008,[167,147,109,.22]);
 }
+function mothMesh(o,t,form,limb){
+  const dust=[113,100,79,.17],rag=[62,52,49],head=[151,134,103,.25];
+  const active=o.stage==='hunt'||o.stage==='search',sweep=o.stage==='sweep';
+  const flap=Math.sin(t*(active?33:sweep?25:9));
+  const dive=o.stage==='hunt'?Math.pow(Math.max(0,Math.sin(timeIn*15)),3)*(o.pressure||0):0;
+  const lift=.57+.047*Math.sin(t*6)-dive*.24+(sweep?.09:0);
+  form(ACTOR_ROUND,0,.03,lift,.063,.084,.197,rag,0,0,.24);
+  form(ACTOR_ROUND,0,.10,lift+.145,.063,.054,.067,head);
+  for(const side of [-1,1]){
+    const spread=.23+flap*.06-dive*.085,roll=side*(.50+flap*.40+dive*.28);
+    form(LAMPLIGHTER_SHROUD,side*spread,-.04,lift+.10,.25,.044,.179,dust,roll);
+    form(LAMPLIGHTER_SHROUD,side*spread*.66,-.063,lift-.093,.18,.039,.147,rag,roll*.85);
+    limb([side*.024,.112,lift+.177],[side*.106,.15,lift+.29],.009,dust);
+    form(ACTOR_ROUND,side*.026,.146,lift+.145,.014,.009,.019,[54,33,23,.32]);
+  }
+}
 function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   const furniture=o.t==='manorFurniture'||o.t==='manorFrame';
   const radius=o.t==='manorFrame'?o.width*.55:furniture?1:o.t==='manorLantern'?.13:o.t==='ent'?.80:o.t==='crawl'?.53:o.t==='pet'?.21:.43;
@@ -5976,6 +6085,7 @@ function drawActor(o,tx,ty,hz,t,pose,descent,extra,fog,camera=P){
   else if(o.t==='pet')wispMesh(o,t,form);
   else if(o.t==='gardener')gardenerMesh(o,t,form,limb);
   else if(o.t==='conductor')conductorMesh(o,t,form,limb);
+  else if(o.t==='moth')mothMesh(o,t,form,limb);
   else if(o.t==='friend')playerMesh(o,pose,t,form,limb);
   else humanMesh(o,pose,t,form,limb);
 }
@@ -6359,7 +6469,7 @@ function render(t){
     const pos=o===C&&drop?{x:o.x+(drop.x-o.x)*descent,y:o.y+(drop.y-o.y)*descent}:o;
     const [tx,ty]=camSpace(pos),actor=ACTORS.has(o.t);
     const furniture=o.t==='manorFrame'||o.t==='manorFurniture'&&MANOR_FURNITURE_3D.has(o.kind);
-    const fixed=o.t==='gardener'||o.t==='conductor';
+    const fixed=o.t==='gardener'||o.t==='conductor'||o.t==='moth';
     return {o,tx,ty,pose:fixed?{yaw:o.yaw}:furniture||o.t==='manorLantern'?{yaw:o.a??Math.PI/2}:actor?actorPose(o,t):null};
   }).filter(s=>s.pose?s.ty>-.34&&Math.abs(s.tx)<Math.max(0,s.ty)+(s.o.t==='manorFrame'?1.9:1.1):s.ty>.12).sort((a,b)=>b.ty-a.ty);
   objectDepth.fill(0);
@@ -7164,6 +7274,16 @@ function drawScare(now){
   }
   cx.fillRect(0,0,W,H);
   if(elapsed>=.94)return;
+  if(catchKind==='H'){
+    const size=Math.min(W,H)*(.32+.36*Math.min(1,elapsed*5));
+    cx.fillStyle='#675744';
+    for(const side of [-1,1]){
+      cx.beginPath();cx.ellipse(W/2+side*size*.48,H*.48,size*.49,size*.28,side*.46,0,Math.PI*2);cx.fill();
+    }
+    cx.fillStyle='#b5a57f';
+    cx.beginPath();cx.ellipse(W/2,H*.48,size*.18,size*.24,0,0,Math.PI*2);cx.fill();
+    return;
+  }
   if(catchKind==='M'){
     const size=Math.min(W,H)*(.38+Math.min(1,elapsed*5)*.35);
     cx.fillStyle='#b2a188';
