@@ -2,7 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
 		<title>Hollow</title>
 		<style>
 html, body, #canvas {
@@ -140,9 +140,17 @@ body {
 			<div id="status-notice"></div>
 		</div>
 
+		<script>
+// Android in-app browsers (the wallet, X, Facebook) call themselves "Version/4.0 Chrome/... Safari/...". Godot's
+// loader takes that for Safari 4 and refuses to start. Say Chrome, as the phone's own browser does.
+(function readAsChrome() {
+	const name = navigator.userAgent.replace(/Version\/[\d.]+ (?=Chrome\/)/, '');
+	if (name !== navigator.userAgent) Object.defineProperty(navigator, 'userAgent', { get: () => name });
+}());
+		</script>
 		<script src="hollow-orchard-search.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-cellar-gate.pck","experimentalVK":true,"fileSizes":{"hollow-cellar-gate.pck":42274756,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-edge.pck","experimentalVK":true,"fileSizes":{"hollow-edge.pck":41873444,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 // Godot's web renderer compiles four lightmap-capable default programs per material up front. Hollow has no
 // lightmaps, so every real draw uses a DISABLE_LIGHTMAP program; the defaults only froze the page (100 of 186).
