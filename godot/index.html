@@ -119,6 +119,54 @@ body {
 	text-align: center;
 	z-index: 1;
 }
+		#hollow-opening {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	max-height: none;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	background: #000;
+	color: #f2e4ce;
+}
+#hollow-opening::backdrop { background: #000; }
+#hollow-opening video {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+#hollow-opening .opening-controls {
+	position: absolute;
+	display: flex;
+	gap: 8px;
+	right: max(16px, env(safe-area-inset-right));
+	bottom: max(16px, env(safe-area-inset-bottom));
+}
+#hollow-opening button {
+	min-height: 44px;
+	padding: 8px 14px;
+	border: 1px solid #846c52;
+	border-radius: 4px;
+	background: #17130f;
+	color: inherit;
+	font: 600 16px system-ui, sans-serif;
+	cursor: pointer;
+}
+#hollow-opening button:focus-visible { outline: 2px solid #efbb82; outline-offset: 3px; }
+#hollow-opening button[aria-pressed="true"] { background: #684929; }
+#hollow-opening [data-play] {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+}
+
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="hollow-orchard-search.icon.png" />
 <link rel="apple-touch-icon" href="hollow-orchard-search.apple-touch-icon.png"/>
@@ -128,6 +176,19 @@ body {
 		<canvas id="canvas">
 			Your browser does not support the canvas tag.
 		</canvas>
+		<dialog id="hollow-opening" aria-label="Hollow opening cinematic">
+			<video playsinline preload="none" aria-label="Mara’s letter">
+				<track kind="captions" src="hollow-opening-v1.vtt" srclang="en" label="English">
+			</video>
+			<button type="button" data-play hidden>Play intro</button>
+			<div class="opening-controls">
+				<button type="button" data-captions aria-label="English captions" aria-pressed="false">CC</button>
+				<button type="button" data-skip>Skip intro</button>
+			</div>
+		</dialog>
+		<script src="hollow-opening.js"></script>
+
+
 
 		<noscript>
 			Your browser does not support JavaScript.
@@ -150,7 +211,7 @@ body {
 		</script>
 		<script src="hollow-orchard-search.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-edge.pck","experimentalVK":true,"fileSizes":{"hollow-edge.pck":41873444,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-opening.pck","experimentalVK":true,"fileSizes":{"hollow-opening.pck":41875524,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 // Godot's web renderer compiles four lightmap-capable default programs per material up front. Hollow has no
 // lightmaps, so every real draw uses a DISABLE_LIGHTMAP program; the defaults only froze the page (100 of 186).
