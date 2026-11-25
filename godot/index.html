@@ -53,8 +53,16 @@ body {
 #status {
 	position: absolute;
 	inset: 0;
-	background: #090a11 url("hollow-loading.webp?v=2") center 12% / cover no-repeat;
+	background: #090a11 url("hollow-loading.webp?v=3") center 12% / cover no-repeat;
 	visibility: hidden;
+}
+#status-wordmark {
+	position: absolute;
+	top: 43%;
+	left: 74%;
+	transform: translate(-50%, -50%);
+	width: min(455px, 41vw);
+	height: auto;
 }
 #status-card, #status-notice {
 	position: absolute;
@@ -147,7 +155,8 @@ progress::-moz-progress-bar { background: var(--brass); }
 	transform: translate(-50%, -50%);
 }
 @media (orientation: portrait) {
-	#status { background: #05070b url("hollow-loading-tall.webp?v=2") top center / cover no-repeat; }
+	#status { background: #05070b url("hollow-loading-tall.webp?v=3") top center / cover no-repeat; }
+	#status-wordmark { top: auto; bottom: calc(8% + 92px); left: 50%; transform: translateX(-50%); width: min(380px, 80vw); }
 	#status-card, #status-notice { top: auto; left: 50%; bottom: 8%; transform: translateX(-50%); width: min(320px, 88vw); }
 }
 @media (max-width: 520px) {
@@ -190,6 +199,7 @@ progress::-moz-progress-bar { background: var(--brass); }
 		</noscript>
 
 		<div id="status">
+			<img id="status-wordmark" src="hollow-wordmark-splinter.webp" alt="Hollow">
 			<div id="status-card" class="field-plate" hidden>
 				<div class="status-label"><span id="status-text" role="status">Lighting the lantern…</span><span id="status-percent" aria-hidden="true"></span></div>
 				<progress id="status-progress" aria-label="Loading Hollow"></progress>
@@ -207,7 +217,7 @@ progress::-moz-progress-bar { background: var(--brass); }
 		</script>
 		<script src="hollow-orchard-search.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-title-menu.pck","experimentalVK":true,"fileSizes":{"hollow-title-menu.pck":42802428,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"hollow-orchard-search","mainPack":"hollow-wordmark.pck","experimentalVK":true,"fileSizes":{"hollow-wordmark.pck":42902924,"hollow-orchard-search.wasm":37695054},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 // Godot's web renderer compiles four lightmap-capable default programs per material up front. Hollow has no
 // lightmaps, so every real draw uses a DISABLE_LIGHTMAP program; the defaults only froze the page (100 of 186).
