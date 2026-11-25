@@ -26,100 +26,73 @@ body {
 	outline: none;
 }
 
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
+:root {
+	--paper: #f2dec0;
+	--muted: #c7ac89;
+	--brass: #c5a26c;
+	--wood: #211914;
+	--rim: #806242;
 }
+[hidden] { display: none !important; }
 
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
+.field-plate {
+	position: relative;
+	border: 1px solid var(--rim);
+	background: var(--wood);
+	color: var(--paper);
+	box-shadow: 0 8px 26px #080609aa;
+}
+.field-plate::before {
+	position: absolute;
+	inset: 4px;
+	border: 1px solid #594531;
+	content: "";
+	pointer-events: none;
 }
 
 #status {
+	position: absolute;
+	inset: 0;
 	background: #090a11 url("hollow-loading.webp?v=2") center 12% / cover no-repeat;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
 	visibility: hidden;
 }
-
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
-
-#status-splash.show-image--false {
-	display: none;
-}
-
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
-
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
-
-#status-progress, #status-notice {
-	display: none;
-}
-
-#status-progress, #status-notice, #status-text {
-	display: none;
-}
-
-#status-progress {
-	appearance: none;
-	-webkit-appearance: none;
-	bottom: 11%;
-	width: min(420px, 70%);
-	height: 6px;
-	margin: 0 auto;
-	border: 0;
-	background: #2a211bcc;
-}
-
-#status-progress::-webkit-progress-bar { background: #2a211bcc; }
-#status-progress::-webkit-progress-value { background: #d6af7a; }
-#status-progress::-moz-progress-bar { background: #d6af7a; }
-
-@media (orientation: portrait) {
-	#status {
-		background: #05070b url("hollow-loading-tall.webp?v=2") top center / cover no-repeat;
-	}
-}
-
-#status-text {
+#status-card, #status-notice {
 	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: calc(11% + 16px);
-	color: #ebe0cb;
-	font: 16px/1.4 Georgia, "Noto Serif", serif;
-	text-align: center;
-	text-shadow: 0 1px 6px #000;
+	top: 62%;
+	left: 74%;
+	transform: translate(-50%, -50%);
+	box-sizing: border-box;
+	width: min(320px, 43vw);
+	padding: 16px 18px;
+}
+.status-label {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 6px 12px;
+	margin-bottom: 9px;
+}
+#status-text { font: 20px/1.2 Georgia, serif; }
+#status-percent { color: var(--muted); font: 600 13px system-ui, sans-serif; }
+#status-progress, #opening-progress {
+	display: block;
+	width: 100%;
+	height: 5px;
+	appearance: none;
+	border: 0;
+	background: #423022;
+	color: var(--brass);
+}
+progress::-webkit-progress-bar { background: #423022; }
+progress::-webkit-progress-value { background: var(--brass); }
+progress::-moz-progress-bar { background: var(--brass); }
+#status-notice {
+	overflow-wrap: anywhere;
+	font: 15px/1.45 system-ui, sans-serif;
 }
 
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		#hollow-opening {
+#hollow-opening {
 	position: fixed;
 	inset: 0;
 	width: 100%;
@@ -131,42 +104,57 @@ body {
 	padding: 0;
 	border: 0;
 	overflow: hidden;
-	background: #000;
-	color: #f2e4ce;
+	background: #0b0909;
+	color: var(--paper);
 }
-#hollow-opening::backdrop { background: #000; }
-#hollow-opening video {
-	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: contain;
-}
-#hollow-opening .opening-controls {
-	position: absolute;
+#hollow-opening[open] { display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+#hollow-opening::backdrop { background: #0b0909; }
+#hollow-opening video { width: 100%; height: 100%; object-fit: contain; }
+#hollow-opening video::cue { color: #ffedd2; background: #16110fdf; }
+.opening-controls {
+	box-sizing: border-box;
+	width: min(820px, calc(100% - 24px));
+	margin: 0 auto max(12px, env(safe-area-inset-bottom));
+	padding: 11px 14px;
 	display: flex;
-	gap: 8px;
-	right: max(16px, env(safe-area-inset-right));
-	bottom: max(16px, env(safe-area-inset-bottom));
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px 18px;
 }
+.opening-position { flex: 1; min-width: 0; }
+.opening-position .status-label { margin-bottom: 6px; }
+.opening-title { font: 19px/1.2 Georgia, serif; }
+[data-time] { color: var(--muted); font: 12px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.opening-actions { display: flex; gap: 6px; }
 #hollow-opening button {
 	min-height: 44px;
-	padding: 8px 14px;
-	border: 1px solid #846c52;
-	border-radius: 4px;
-	background: #17130f;
+	padding: 7px 11px;
+	border: 1px solid #806242;
+	background: #2d231b;
 	color: inherit;
-	font: 600 16px system-ui, sans-serif;
+	font: 600 14px system-ui, sans-serif;
+	white-space: nowrap;
 	cursor: pointer;
 }
-#hollow-opening button:focus-visible { outline: 2px solid #efbb82; outline-offset: 3px; }
-#hollow-opening button[aria-pressed="true"] { background: #684929; }
+#hollow-opening button:hover { background: #443326; }
+#hollow-opening button:focus-visible { outline: 2px solid #f0ca8f; outline-offset: 2px; }
+#hollow-opening button[aria-pressed="true"] { border-color: var(--brass); background: #56412b; }
+#hollow-opening [data-skip] { background: #4e3926; }
 #hollow-opening [data-play] {
 	position: absolute;
 	top: 50%;
 	left: 50%;
 	transform: translate(-50%, -50%);
 }
-
+@media (orientation: portrait) {
+	#status { background: #05070b url("hollow-loading-tall.webp?v=2") top center / cover no-repeat; }
+	#status-card, #status-notice { top: auto; left: 50%; bottom: 8%; transform: translateX(-50%); width: min(320px, 88vw); }
+}
+@media (max-width: 520px) {
+	.opening-controls { flex-wrap: wrap; }
+	.opening-position { flex-basis: 100%; }
+	.opening-actions { margin-left: auto; }
+}
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="hollow-orchard-search.icon.png" />
 <link rel="apple-touch-icon" href="hollow-orchard-search.apple-touch-icon.png"/>
@@ -181,12 +169,19 @@ body {
 				<track kind="captions" src="hollow-opening-v1.vtt" srclang="en" label="English">
 			</video>
 			<button type="button" data-play hidden>Play intro</button>
-			<div class="opening-controls">
-				<button type="button" data-captions aria-label="English captions" aria-pressed="false">CC</button>
-				<button type="button" data-skip>Skip intro</button>
+			<div class="opening-controls field-plate">
+				<div class="opening-position">
+					<div class="status-label"><span class="opening-title">Mara’s letter</span><span data-time aria-hidden="true">0:00</span></div>
+					<progress id="opening-progress" aria-label="Intro playback progress" max="1" value="0"></progress>
+				</div>
+				<div class="opening-actions">
+					<button type="button" data-toggle hidden>Pause</button>
+					<button type="button" data-captions aria-label="English captions" aria-pressed="false">CC</button>
+					<button type="button" data-skip>Skip intro</button>
+				</div>
 			</div>
 		</dialog>
-		<script src="hollow-opening.js"></script>
+		<script src="hollow-opening.js?v=controls"></script>
 
 
 
@@ -195,10 +190,11 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--false" src="hollow-loading.webp" alt="">
-			<div id="status-text" role="status">Lighting the lantern…</div>
-			<progress id="status-progress" aria-label="Loading Hollow"></progress>
-			<div id="status-notice"></div>
+			<div id="status-card" class="field-plate" hidden>
+				<div class="status-label"><span id="status-text" role="status">Lighting the lantern…</span><span id="status-percent" aria-hidden="true"></span></div>
+				<progress id="status-progress" aria-label="Loading Hollow"></progress>
+			</div>
+			<div id="status-notice" class="field-plate" role="alert" hidden></div>
 		</div>
 
 		<script>
@@ -230,6 +226,8 @@ const engine = new Engine(GODOT_CONFIG);
 
 (function () {
 	const statusOverlay = document.getElementById('status');
+	const statusCard = document.getElementById('status-card');
+	const statusPercent = document.getElementById('status-percent');
 	const statusProgress = document.getElementById('status-progress');
 	const statusText = document.getElementById('status-text');
 	const statusNotice = document.getElementById('status-notice');
@@ -247,9 +245,8 @@ const engine = new Engine(GODOT_CONFIG);
 			return;
 		}
 		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusText.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusCard.hidden = mode !== 'progress';
+		statusNotice.hidden = mode !== 'notice';
 		statusMode = mode;
 	}
 
@@ -320,8 +317,11 @@ const engine = new Engine(GODOT_CONFIG);
 					statusProgress.value = current;
 					statusProgress.max = total;
 					// The wasm arrives compressed, so percent is honest where megabytes would not be.
-					statusText.textContent = current < total ? 'Loading Hollow… ' + Math.floor(current / total * 100) + '%' : 'Opening the old house…';
+					const label = current < total ? 'Loading Hollow…' : 'Opening the old house…';
+					if (statusText.textContent !== label) statusText.textContent = label;
+					statusPercent.textContent = Math.min(100, Math.floor(current / total * 100)) + '%';
 				} else {
+					statusPercent.textContent = '';
 					statusProgress.removeAttribute('value');
 					statusProgress.removeAttribute('max');
 				}
