@@ -73,9 +73,7 @@
       });
     };
 
-    skip.addEventListener('click', finish, { signal });
-    play.addEventListener('click', start, { signal });
-    toggle.addEventListener('click', () => {
+    const togglePlayback = () => {
       if (pausedByPlayer) {
         start();
         return;
@@ -84,7 +82,14 @@
       clearTimeout(timeout);
       video.pause();
       toggle.textContent = 'Resume';
+    };
+
+    skip.addEventListener('click', finish, { signal });
+    play.addEventListener('click', () => {
+      dialog.focus({ preventScroll: true });
+      start();
     }, { signal });
+    toggle.addEventListener('click', togglePlayback, { signal });
     captions.addEventListener('click', () => {
       const enabled = track.mode !== 'showing';
       track.mode = enabled ? 'showing' : 'disabled';
@@ -94,7 +99,13 @@
       event.preventDefault();
       finish();
     }, { signal });
-    dialog.addEventListener('keydown', (event) => event.stopPropagation(), { signal });
+    dialog.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      if (!toggle.hidden && event.code === 'Space' && (event.target === dialog || event.target === video)) {
+        event.preventDefault();
+        if (!event.repeat) togglePlayback();
+      }
+    }, { signal });
     video.addEventListener('ended', finish, { signal });
     video.addEventListener('error', finish, { signal });
     video.addEventListener('loadedmetadata', updatePosition, { signal });
@@ -110,8 +121,8 @@
       if (!pausedByPlayer && !video.ended && video.currentTime > 0) offerPlay();
     }, { signal });
 
-    skip.focus({ preventScroll: true });
     toggle.hidden = true;
+    dialog.focus({ preventScroll: true });
     progress.value = 0;
     time.textContent = '0:00';
     video.volume = Math.max(0, Math.min(1, Number(volume)));
